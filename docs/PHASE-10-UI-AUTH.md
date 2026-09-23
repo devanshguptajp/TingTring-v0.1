@@ -12,7 +12,7 @@ Implemented:
 - Proper Material icons and Internet permission.
 - Profile and Home surfaces use the authenticated TTT identity.
 
-Remaining external verification:
+Repository implementation additions: owner console ID management UI.\n\nRemaining external verification:
 - Point the Android client at the deployed backend instead of the emulator localhost address.
 - Configure Supabase Auth/email in the real project.
 - Run real signup/login/OTP/reset flows against deployed services.
