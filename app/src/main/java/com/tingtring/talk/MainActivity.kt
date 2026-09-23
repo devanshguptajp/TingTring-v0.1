@@ -1,8 +1,11 @@
 package com.tingtring.talk
 
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +19,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -25,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.tingtring.talk.data.*
 import com.tingtring.talk.ui.theme.TingTringTheme
 import kotlinx.coroutines.launch
+import io.livekit.android.LiveKit
 
 private const val API_BASE_URL="http://10.0.2.2:3000"
 
@@ -33,10 +38,10 @@ class MainActivity:ComponentActivity(){
 }
 
 @Composable private fun App(api:ApiClient,session:SessionStore){
- var user by remember{mutableStateOf<TttUser?>(null)};var checking by remember{mutableStateOf(session.accessToken!=null)}
+ var user by remember{mutableStateOf<TttUser?>(null)};var activeCall by remember{mutableStateOf<CallSession?>(null)};var checking by remember{mutableStateOf(session.accessToken!=null)}
  LaunchedEffect(Unit){if(session.accessToken!=null){val r=api.me();user=r.value;if(r.value==null)session.clear()};checking=false}
  if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
- else if(user==null)AuthScreen(api){user=it}else MainShell(api,user!!){user=null;session.clear()}
+ else if(user==null)AuthScreen(api){user=it}else if(activeCall!=null)CallScreen(api,activeCall!!){activeCall=null}else MainShell(api,user!!){user=null;session.clear()}
 }
 
 @Composable private fun AuthScreen(api:ApiClient,onSignedIn:(TttUser)->Unit){
@@ -76,4 +81,39 @@ class MainActivity:ComponentActivity(){
 
 @Composable private fun Profile(api:ApiClient,user:TttUser,onLogout:()->Unit,modifier:Modifier=Modifier){
  val scope=rememberCoroutineScope();Column(modifier.fillMaxSize().padding(22.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Text("Profile",style=MaterialTheme.typography.headlineLarge);Text(user.displayName,style=MaterialTheme.typography.titleLarge);Text("@"+user.username);Text("TingTring ID: "+user.tttUserId);Text("Plan: "+user.plan);Spacer(Modifier.height(12.dp));OutlinedButton(onClick={scope.launch{api.logout();onLogout()}},modifier=Modifier.fillMaxWidth()){Text("Sign out")}}
+}
+
+
+@Composable private fun CallScreen(api:ApiClient,session:CallSession,onEnded:()->Unit){
+ val context=LocalContext.current
+ var connected by remember{mutableStateOf(false)}
+ var muted by remember{mutableStateOf(false)}
+ var error by remember{mutableStateOf<String?>(null)}
+ val scope=rememberCoroutineScope()
+ val room=remember{LiveKit.create(appContext=context.applicationContext)}
+ DisposableEffect(Unit){
+  onDispose{runCatching{room.disconnect();room.release()}}
+ }
+ LaunchedEffect(session.callId){
+  if(androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+   error="Microphone permission is required"
+   return@LaunchedEffect
+  }
+  try{
+   room.connect(session.livekitUrl,session.token)
+   if(!room.localParticipant.setMicrophoneEnabled(true)) throw IllegalStateException("MICROPHONE_ENABLE_FAILED")
+   connected=true
+  }catch(t:Throwable){error=t.message?:"CALL_CONNECTION_FAILED"}
+ }
+ Column(Modifier.fillMaxSize().padding(28.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
+  Text("TingTring Call",style=MaterialTheme.typography.headlineLarge)
+  Spacer(Modifier.height(12.dp))
+  Text(if(error!=null)"Call failed"else if(connected)"Connected"else"Connecting…")
+  error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
+  Spacer(Modifier.height(28.dp))
+  Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
+   OutlinedButton(enabled=connected,onClick={scope.launch{muted=!muted;room.localParticipant.setMicrophoneEnabled(!muted)}}){Text(if(muted)"Unmute"else"Mute")}
+   Button(onClick={scope.launch{api.endCall(session.callId);room.disconnect();onEnded()}}){Text("End call")}
+  }
+ }
 }
