@@ -286,3 +286,26 @@ create policy announcements_read_active on public.announcements for select to au
 create policy feature_flags_read on public.feature_flags for select to authenticated using (true);
 
 -- Operational/admin tables intentionally remain server-only through the backend service role.
+
+
+-- Re-define ID generation after identity_reservations exists so deleted IDs
+-- can never be generated again.
+create or replace function public.generate_ttt_user_id()
+returns text
+language plpgsql
+volatile
+as $$
+declare
+  candidate text;
+begin
+  loop
+    candidate := lpad((floor(random() * 10000000000))::bigint::text, 10, '0');
+    exit when not exists (
+      select 1 from public.profiles where ttt_user_id = candidate
+    ) and not exists (
+      select 1 from public.identity_reservations where ttt_user_id = candidate
+    );
+  end loop;
+  return candidate;
+end;
+$$;
