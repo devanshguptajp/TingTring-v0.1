@@ -185,6 +185,66 @@ app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res)
   }
 });
 
+app.get("/api/v1/directory/search", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length < 3 || q.length > 30) return res.status(400).json({ error: "INVALID_SEARCH" });
+    const normalized = q.toLowerCase();
+    const { data, error } = await supabaseAdmin.rpc("search_profile_directory", { search_text: normalized });
+    if (error) throw error;
+    res.status(200).json({ results: (data || []).map(publicProfile) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "DIRECTORY_SEARCH_FAILED" });
+  }
+});
+
+app.get("/api/v1/contacts", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin.from("contacts")
+      .select("id,contact_user_id,is_blocked,created_at,contact:contact_user_id(id,ttt_user_id,username,display_name,plan,avatar_url,status,created_at,updated_at,last_seen_at)")
+      .eq("owner_user_id", req.authUser.id).order("created_at", { ascending: false });
+    if (error) throw error;
+    res.status(200).json({ contacts: (data || []).map(row => ({ id: row.id, is_blocked: row.is_blocked, created_at: row.created_at, user: row.contact })) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "CONTACTS_LOOKUP_FAILED" });
+  }
+});
+
+app.post("/api/v1/contacts", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const tttUserId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim() : "";
+    if (!/^\\d{10}$/.test(tttUserId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
+    const { data: contact, error: lookupError } = await supabaseAdmin.from("profiles")
+      .select("id,ttt_user_id,username,display_name,plan,avatar_url,status,created_at,updated_at,last_seen_at")
+      .eq("ttt_user_id", tttUserId).eq("status", "ACTIVE").maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!contact) return res.status(404).json({ error: "USER_NOT_FOUND" });
+    if (contact.id === req.authUser.id) return res.status(400).json({ error: "CANNOT_ADD_SELF" });
+    const { data, error } = await supabaseAdmin.from("contacts")
+      .upsert({ owner_user_id: req.authUser.id, contact_user_id: contact.id, is_blocked: false }, { onConflict: "owner_user_id,contact_user_id" })
+      .select("id,is_blocked,created_at").single();
+    if (error) throw error;
+    res.status(201).json({ contact: { ...data, user: publicProfile(contact) } });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "CONTACT_ADD_FAILED" });
+  }
+});
+
+app.delete("/api/v1/contacts/:contactId", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from("contacts").delete()
+      .eq("id", req.params.contactId).eq("owner_user_id", req.authUser.id);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "CONTACT_REMOVE_FAILED" });
+  }
+});
+
 app.get("/api/v1/auth/me", requireSupabase, requireUser, async (req, res) => {
   try {
     const profile = await getProfile(supabaseAdmin, req.authUser.id);
