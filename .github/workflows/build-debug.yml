@@ -24,7 +24,12 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Verify build tool versions\n        run: |\n          java -version\n          gradle --version\n\n      - name: Build debug APK
+      - name: Verify build tool versions
+        run: |
+          java -version
+          gradle --version
+
+      - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Upload debug APK
