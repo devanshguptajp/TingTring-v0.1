@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TingTring — Vanay Correction Preview</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f8fc;color:#101828;font-family:Arial,sans-serif}
+.card{width:min(560px,92vw);padding:28px;border-radius:24px;background:white;box-shadow:0 18px 60px #10182818}
+h1{margin:0 0 8px;font-size:28px}.sub{color:#667085;margin-bottom:24px}
+.field{height:56px;border:1px solid #d0d5dd;border-radius:14px;padding:0 16px;display:flex;align-items:center;font-size:18px;position:relative;overflow:hidden}
+#word{font-weight:700}.laser{position:absolute;height:6px;background:#f00;box-shadow:0 0 10px #f00,0 0 28px #f00;left:0;top:25px;width:0;opacity:0}
+.half{position:absolute;font-weight:700;font-size:18px;top:17px;opacity:0}.half.a{left:16px}.half.b{left:70px}
+.ash{position:absolute;top:30px;width:7px;height:7px;border-radius:50%;background:#555;opacity:0}
+.cursor{display:inline-block;width:2px;height:22px;background:#2457e6;margin-left:2px;vertical-align:middle;animation:blink .5s infinite alternate}
+@keyframes blink{to{opacity:.2}}
+button{margin-top:18px;width:100%;height:48px;border:0;border-radius:12px;background:#2457e6;color:white;font-size:16px;font-weight:700;cursor:pointer}
+.dialog{position:fixed;inset:0;background:#10182855;display:none;place-items:center;padding:20px}
+.dialog.show{display:grid}.box{background:white;border-radius:20px;padding:24px;width:min(430px,92vw);position:relative}.close{position:absolute;right:12px;top:8px;border:0;background:none;font-size:28px;cursor:pointer;width:auto;margin:0;color:#667085}
+.box h2{margin:0 32px 12px 0}.box p{line-height:1.55;color:#475467}
+.note{font-size:12px;color:#98a2b3;margin-top:12px}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Vanay correction preview 😂</h1>
+<div class="sub">Type <b>vanya</b> and press the button.</div>
+<div class="field"><span id="word">vanya</span><span id="cursor" style="display:none" class="cursor"></span><span id="laser" class="laser"></span></div>
+<button id="go">Play animation</button>
+<div class="note">This is only a visual preview; it does not connect to TingTring accounts.</div>
+</div>
+<div id="dialog" class="dialog"><div class="box"><button class="close" id="close">×</button><h2>😂 Important TingTring correction</h2><p><b>vanay is a boy hahahaha 😂</b></p><p>You were <b>NOT hacked</b>. Your cursor is still yours. Only this animation was added to make the correction dramatic. 😎</p></div></div>
+<script>
+const word=document.querySelector('#word'),laser=document.querySelector('#laser'),cursor=document.querySelector('#cursor'),dialog=document.querySelector('#dialog'),go=document.querySelector('#go');
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+async function play(){
+go.disabled=true;dialog.classList.remove('show');word.textContent='vanya';word.style.opacity='1';cursor.style.display='none';laser.style.opacity='1';laser.style.width='100%';
+await sleep(2200);
+word.style.opacity='0';
+const a=document.createElement('span'),b=document.createElement('span');a.className='half a';b.className='half b';a.textContent='van';b.textContent='ya';document.querySelector('.field').append(a,b);
+a.style.opacity=b.style.opacity='1';a.style.transition=b.style.transition='transform .7s,opacity .7s';a.style.transform='translate(-24px,70px) rotate(-10deg)';b.style.transform='translate(28px,70px) rotate(10deg)';a.style.opacity=b.style.opacity='0';
+for(let i=0;i<14;i++){const p=document.createElement('i');p.className='ash';p.style.left=(20+Math.random()*75)+'%';p.style.top='34px';p.style.transition='transform .9s,opacity .9s';document.querySelector('.field').append(p);requestAnimationFrame(()=>{p.style.transform='translateY('+(40+Math.random()*55)+'px)';p.style.opacity='0'});}
+await sleep(800);laser.style.width='0';laser.style.opacity='0';cursor.style.display='inline-block';word.style.opacity='1';word.textContent='';
+await sleep(350);
+for(const ch of 'vanay'){word.textContent+=ch;await sleep(800)}
+await sleep(250);dialog.classList.add('show');go.disabled=false;
+}
+go.onclick=play;document.querySelector('#close').onclick=()=>dialog.classList.remove('show');
+</script>
+</body></html>
