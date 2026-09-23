@@ -3,6 +3,10 @@ package com.tingtring.talk
 import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.ComponentName
+import android.telecom.PhoneAccount
+import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,7 +38,16 @@ import io.livekit.android.LiveKit
 private const val API_BASE_URL="http://10.0.2.2:3000"
 
 class MainActivity:ComponentActivity(){
- override fun onCreate(state:Bundle?){super.onCreate(state);val session=SessionStore(this);val api=ApiClient(API_BASE_URL,session);setContent{TingTringTheme{App(api,session)}}}
+ override fun onCreate(state:Bundle?){super.onCreate(state);registerTttPhoneAccount();val session=SessionStore(this);val api=ApiClient(API_BASE_URL,session);setContent{TingTringTheme{App(api,session)}}}
+ private fun registerTttPhoneAccount(){
+  val telecom=getSystemService(TelecomManager::class.java)
+  val component=ComponentName(this,com.tingtring.talk.telecom.TttConnectionService::class.java)
+  val handle=PhoneAccountHandle(component,"tingtring_talk")
+  val account=PhoneAccount.builder(handle,"TingTring Talk")
+   .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
+   .build()
+  runCatching{telecom.registerPhoneAccount(account)}
+ }
 }
 
 @Composable private fun App(api:ApiClient,session:SessionStore){
