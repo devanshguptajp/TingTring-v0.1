@@ -38,7 +38,7 @@ class ApiClient(private val baseUrl:String,private val session:SessionStore){
    if(status in 200..299)ApiResult(json) else ApiResult(error=json.optString("error","REQUEST_FAILED"))
   }catch(e:Exception){ApiResult(error=e.message?:"NETWORK_ERROR")}
  }
- private fun user(j:JSONObject)=TttUser(j.optString("id"),j.optString("ttt_user_id"),j.optString("username"),j.optString("display_name"),j.optString("plan","FREE"),j.optString("avatar_url").ifBlank{null},j.optString("status","ACTIVE"))
+ private fun user(j:JSONObject)=TttUser(j.optString("id"),j.optString("ttt_user_id"),j.optString("username"),j.optString("display_name"),j.optString("plan","FREE"),j.optString("avatar_url").takeIf{it.isNotBlank()},j.optString("status","ACTIVE"))
  suspend fun passwordLogin(email:String,password:String):ApiResult<TttUser>{
   val r=request("POST","/api/v1/auth/login/password",JSONObject().apply{put("email",email);put("password",password)})
   if(r.value==null)return ApiResult(error=r.error);save(r.value);return ApiResult(user(r.value.getJSONObject("user")))
