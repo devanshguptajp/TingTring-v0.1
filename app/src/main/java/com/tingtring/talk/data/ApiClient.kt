@@ -1,0 +1,66 @@
+package com.tingtring.talk.data
+
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
+data class TttUser(val id:String,val tttUserId:String,val username:String,val displayName:String,val plan:String,val avatarUrl:String?,val status:String)
+data class Contact(val id:String,val user:TttUser)
+data class ApiResult<T>(val value:T?=null,val error:String?=null)
+
+class SessionStore(context:Context){
+ private val prefs=context.getSharedPreferences("ttt_session",Context.MODE_PRIVATE)
+ var accessToken:String? get()=prefs.getString("access_token",null) set(v){prefs.edit().putString("access_token",v).apply()}
+ var refreshToken:String? get()=prefs.getString("refresh_token",null) set(v){prefs.edit().putString("refresh_token",v).apply()}
+ fun clear(){prefs.edit().clear().apply()}
+}
+
+class ApiClient(private val baseUrl:String,private val session:SessionStore){
+ private suspend fun request(method:String,path:String,body:JSONObject?=null,auth:Boolean=false):ApiResult<JSONObject>=withContext(Dispatchers.IO){
+  try{
+   val c=(URL(baseUrl.trimEnd('/')+path).openConnection() as HttpURLConnection).apply{
+    requestMethod=method;connectTimeout=8000;readTimeout=10000
+    setRequestProperty("Accept","application/json")
+    if(body!=null){doOutput=true;setRequestProperty("Content-Type","application/json")}
+    if(auth){val t=session.accessToken?:return@withContext ApiResult(error="NOT_SIGNED_IN");setRequestProperty("Authorization","Bearer "+t)}
+   }
+   body?.let{b->c.outputStream.use{it.write(b.toString().toByteArray())}}
+   val status=c.responseCode
+   val stream=if(status in 200..299)c.inputStream else c.errorStream
+   val text=stream?.bufferedReader()?.use{it.readText()}.orEmpty()
+   c.disconnect()
+   val json=if(text.isBlank())JSONObject() else JSONObject(text)
+   if(status in 200..299)ApiResult(json) else ApiResult(error=json.optString("error","REQUEST_FAILED"))
+  }catch(e:Exception){ApiResult(error=e.message?:"NETWORK_ERROR")}
+ }
+ private fun user(j:JSONObject)=TttUser(j.optString("id"),j.optString("ttt_user_id"),j.optString("username"),j.optString("display_name"),j.optString("plan","FREE"),j.optString("avatar_url").ifBlank{null},j.optString("status","ACTIVE"))
+ suspend fun passwordLogin(email:String,password:String):ApiResult<TttUser>{
+  val r=request("POST","/api/v1/auth/login/password",JSONObject().apply{put("email",email);put("password",password)})
+  if(r.value==null)return ApiResult(error=r.error);save(r.value);return ApiResult(user(r.value.getJSONObject("user")))
+ }
+ suspend fun signup(email:String,password:String,username:String,displayName:String):ApiResult<TttUser>{
+  val r=request("POST","/api/v1/auth/signup",JSONObject().apply{put("email",email);put("password",password);put("username",username);put("display_name",displayName)})
+  if(r.value==null)return ApiResult(error=r.error);save(r.value)
+  val u=r.value.optJSONObject("user")?:return ApiResult(error=r.value.optString("status","EMAIL_VERIFICATION_REQUIRED"))
+  return ApiResult(user(u))
+ }
+ suspend fun startOtp(email:String):ApiResult<Unit>{val r=request("POST","/api/v1/auth/otp/start",JSONObject().apply{put("email",email);put("should_create_user",false)});return if(r.value!=null)ApiResult(Unit)else ApiResult(error=r.error)}
+ suspend fun verifyOtp(email:String,token:String):ApiResult<TttUser>{
+  val r=request("POST","/api/v1/auth/otp/verify",JSONObject().apply{put("email",email);put("token",token)})
+  if(r.value==null)return ApiResult(error=r.error);save(r.value)
+  val u=r.value.optJSONObject("user")?:return ApiResult(error=r.value.optString("error","PROFILE_SETUP_REQUIRED"))
+  return ApiResult(user(u))
+ }
+ suspend fun me():ApiResult<TttUser>{val r=request("GET","/api/v1/auth/me",auth=true);return if(r.value!=null)ApiResult(user(r.value.getJSONObject("user")))else ApiResult(error=r.error)}
+ suspend fun logout():ApiResult<Unit>{val r=request("POST","/api/v1/auth/logout",auth=true);session.clear();return if(r.value!=null||r.error==null)ApiResult(Unit)else ApiResult(error=r.error)}
+ suspend fun search(q:String):ApiResult<List<TttUser>>{val r=request("GET","/api/v1/directory/search?q="+URLEncoder.encode(q,"UTF-8"),auth=true);if(r.value==null)return ApiResult(error=r.error);val a=r.value.optJSONArray("results")?:JSONArray();return ApiResult((0 until a.length()).map{user(a.getJSONObject(it))})}
+ suspend fun contacts():ApiResult<List<Contact>>{val r=request("GET","/api/v1/contacts",auth=true);if(r.value==null)return ApiResult(error=r.error);val a=r.value.optJSONArray("contacts")?:JSONArray();return ApiResult((0 until a.length()).map{val o=a.getJSONObject(it);Contact(o.optString("id"),user(o.getJSONObject("user")))})}
+ suspend fun addContact(id:String):ApiResult<Unit>{val r=request("POST","/api/v1/contacts",JSONObject().apply{put("ttt_user_id",id)},true);return if(r.value!=null)ApiResult(Unit)else ApiResult(error=r.error)}
+ suspend fun removeContact(id:String):ApiResult<Unit>{val r=request("DELETE","/api/v1/contacts/"+id,auth=true);return if(r.value!=null||r.error==null)ApiResult(Unit)else ApiResult(error=r.error)}
+ private fun save(j:JSONObject){j.optString("access_token").ifBlank{null}?.let{session.accessToken=it};j.optString("refresh_token").ifBlank{null}?.let{session.refreshToken=it}}
+}
