@@ -22,7 +22,9 @@ class TttConnectionService : ConnectionService() {
 
     private class TttConnection : Connection() {
         init {
-            connectionCapabilities = CAPABILITY_MUTE or CAPABILITY_SUPPORT_HOLD
+            connectionProperties = PROPERTY_SELF_MANAGED
+            connectionCapabilities = CAPABILITY_MUTE or CAPABILITY_SUPPORT_HOLD or CAPABILITY_HOLD
+            setAudioModeIsVoip(true)
         }
         override fun onAnswer() {
             setActive()
