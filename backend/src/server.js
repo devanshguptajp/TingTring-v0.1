@@ -105,7 +105,15 @@ app.post("/api/v1/auth/otp/verify", requireSupabase, async (req, res) => {
     const { data, error } = await supabaseAdmin.auth.verifyOtp({ email: normalizedEmail, token, type: "email" });
     if (error) return sendSupabaseError(res, error, "INVALID_OTP");
     if (!data.user || !data.session) return res.status(401).json({ error: "OTP_VERIFICATION_FAILED" });
-    const profile = await ensureProfile(supabaseAdmin, data.user);
+    let profile;
+    try {
+      profile = await ensureProfile(supabaseAdmin, data.user);
+    } catch (profileError) {
+      if (profileError.code === "PROFILE_SETUP_REQUIRED") {
+        return res.status(409).json({ error: profileError.code, access_token: data.session.access_token, refresh_token: data.session.refresh_token });
+      }
+      throw profileError;
+    }
     if (profile.status !== "ACTIVE") return res.status(403).json({ error: "ACCOUNT_UNAVAILABLE" });
     res.status(200).json(authResponse(data.session, profile));
   } catch (error) {
@@ -147,9 +155,34 @@ app.post("/api/v1/auth/refresh", requireSupabase, async (req, res) => {
 });
 
 app.post("/api/v1/auth/logout", requireSupabase, requireUser, async (req, res) => {
-  const { error } = await supabaseAdmin.auth.signOut({ scope: "local" });
-  if (error) { console.error(error); return res.status(500).json({ error: "LOGOUT_FAILED" }); }
-  res.status(204).send();
+  try {
+    const response = await fetch(supabaseUrl + "/auth/v1/logout", {
+      method: "POST",
+      headers: { apikey: supabaseServiceRoleKey, Authorization: "Bearer " + req.authToken }
+    });
+    if (!response.ok) return res.status(500).json({ error: "LOGOUT_FAILED" });
+    res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "LOGOUT_FAILED" });
+  }
+});
+
+app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { username, display_name } = req.body || {};
+    if (!validateUsername(username) || !validateDisplayName(display_name)) return res.status(400).json({ error: "INVALID_PROFILE" });
+    const existing = await getProfile(supabaseAdmin, req.authUser.id);
+    if (existing) return res.status(409).json({ error: "PROFILE_ALREADY_EXISTS", user: publicProfile(existing) });
+    const { data: conflict } = await supabaseAdmin.from("profiles").select("id").eq("username", username).maybeSingle();
+    if (conflict) return res.status(409).json({ error: "USERNAME_ALREADY_IN_USE" });
+    const profile = await ensureProfile(supabaseAdmin, req.authUser, { username, display_name });
+    res.status(201).json({ user: publicProfile(profile) });
+  } catch (error) {
+    if (error.code === "USERNAME_ALREADY_IN_USE") return res.status(409).json({ error: error.code });
+    console.error(error);
+    res.status(500).json({ error: "PROFILE_SETUP_FAILED" });
+  }
 });
 
 app.get("/api/v1/auth/me", requireSupabase, requireUser, async (req, res) => {
