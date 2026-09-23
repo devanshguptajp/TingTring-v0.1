@@ -1,20 +1,24 @@
 # Phase 13 — Advanced Calling & Production Hardening
 
-Status: FOUNDATION STARTED
+Status: TELECOM FOUNDATION IMPLEMENTED — PRODUCTION HARDENING PENDING
 
-Implemented in this pass:
-- Backend CI runs syntax checks and smoke tests.
-- Identity normalization is hardened.
-- Opaque call room IDs are generated with node:crypto.
-- Backend rate limiting, Helmet, CORS, request-size limits remain enabled.
-- Directory responses never expose email.
-- LiveKit credentials remain backend-only.
+Implemented:
+- Android self-managed PhoneAccount registration.
+- MANAGE_OWN_CALLS declaration.
+- ConnectionService declaration and implementation.
+- VoIP connection properties and audio mode.
+- Backend input hardening.
+- Call lifecycle authorization.
+- Identity normalization.
+- TTT ID reservation protection.
+- CI/backend smoke-test wiring.
 
-Not yet implemented:
+Still required:
+- Connect Telecom events to the LiveKit call controller.
+- FCM push delivery and device-token registration.
+- Lock-screen incoming-call flow.
 - Group calling.
 - Screen sharing.
-- Android Telecom integration.
-- Push notification delivery.
-- Production abuse/security regression suite.
-- Owner Console implementation.
-- Final release hardening.
+- Video call UI.
+- Full network/reconnect regression tests.
+- Owner Console and production release hardening.
