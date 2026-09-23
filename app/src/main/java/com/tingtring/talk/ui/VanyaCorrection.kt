@@ -238,26 +238,20 @@ private fun LaserCutAnimation() {
 
 @Composable
 private fun AshParticles() {
-    val particles = remember {
-        List(12) { index ->
-            index
+    val particles = remember { List(12) { it } }
+    Box(Modifier.fillMaxSize()) {
+        particles.forEach { index ->
+            val row = index / 4
+            val column = index % 4
+            val drift = (column - 1.5f) * 18f
+            Box(
+                Modifier
+                    .size(5.dp)
+                    .align(Alignment.Center)
+                    .offset(x = drift.dp, y = (row * 12 + 24).dp)
+                    .background(Color.DarkGray.copy(alpha = 0.45f), RoundedCornerShape(50))
+            )
         }
-    }
-
-    particles.forEach { index ->
-        val row = index / 4
-        val column = index % 4
-        val drift = (column - 1.5f) * 18f
-        Box(
-            Modifier
-                .size(5.dp)
-                .align(Alignment.Center)
-                .offset(
-                    x = drift.dp,
-                    y = (row * 12 + 24).dp
-                )
-                .background(Color.DarkGray.copy(alpha = 0.45f), RoundedCornerShape(50))
-        )
     }
 }
 
