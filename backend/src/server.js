@@ -190,9 +190,18 @@ app.get("/api/v1/directory/search", requireSupabase, requireUser, async (req, re
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (q.length < 3 || q.length > 30) return res.status(400).json({ error: "INVALID_SEARCH" });
     const normalized = q.toLowerCase();
-    const { data, error } = await supabaseAdmin.rpc("search_profile_directory", { search_text: normalized });
+    const pattern = normalized.replace(/[%_,]/g, "");
+    const { data, error } = await supabaseAdmin.from("profiles")
+      .select("id,ttt_user_id,username,display_name,plan,avatar_url,status")
+      .eq("status", "ACTIVE")
+      .or("username.ilike."+pattern+"%,ttt_user_id.eq."+pattern)
+      .order("username", { ascending: true })
+      .limit(25);
     if (error) throw error;
-    res.status(200).json({ results: (data || []).map(p => ({ id:p.id, ttt_user_id:p.ttt_user_id, username:p.username, display_name:p.display_name, plan:"FREE", avatar_url:p.avatar_url, status:"ACTIVE" })) });
+    res.status(200).json({ results: (data || []).map(p => ({
+      id:p.id, ttt_user_id:p.ttt_user_id, username:p.username, display_name:p.display_name,
+      plan:p.plan, avatar_url:p.avatar_url, status:p.status
+    })) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "DIRECTORY_SEARCH_FAILED" });
