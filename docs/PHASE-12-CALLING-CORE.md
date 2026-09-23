@@ -1,23 +1,24 @@
 # Phase 12 — Calling Core
 
-Status: CORE FOUNDATION IMPLEMENTED — LIVE CALL VERIFICATION PENDING
+Status: OUTGOING AUDIO CALL CORE IMPLEMENTED — LIVE CALL VERIFICATION PENDING
 
 Implemented:
-- LiveKit Android SDK dependency.
-- LiveKit server SDK dependency.
-- Secure backend call-start endpoint.
-- Short-lived LiveKit room token generation on the backend only.
-- Opaque LiveKit participant identity based on the authenticated user UUID.
-- Audio/video call type selection in the call-start API.
-- Call and participant records created in PostgreSQL.
-- Authenticated call-end endpoint.
-- Android microphone/camera/Bluetooth permission declarations.
+- LiveKit Android 2.29.0.
+- LiveKit Node server SDK 2.19.1.
+- Backend short-lived LiveKit token generation.
+- Authenticated call-start and call-end APIs.
+- Authenticated callee accept/decline APIs.
+- Caller/callee database participant records.
+- Incoming-call notification record creation.
+- Android microphone permission request.
+- Android LiveKit room connect/disconnect lifecycle.
+- Mute/unmute.
+- Contacts/search Call action.
+- No LiveKit secret in Android.
 
-Remaining:
-- Runtime permission UX.
-- Incoming-call push delivery.
-- Android Telecom ConnectionService/PhoneAccount.
-- Full in-call UI and LiveKit Room lifecycle integration.
-- Two-device end-to-end call test against a configured LiveKit deployment.
-
-Secrets are not stored in Android.
+Still required:
+- LiveKit deployment/configuration.
+- Push delivery to wake the callee.
+- Incoming-call UI accepting/declining from notification.
+- Two-device end-to-end test.
+- Full video rendering/camera flow.
