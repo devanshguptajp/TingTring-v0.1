@@ -57,6 +57,7 @@ class ApiClient(private val baseUrl:String,private val session:SessionStore){
   return ApiResult(user(u))
  }
  suspend fun me():ApiResult<TttUser>{val r=request("GET","/api/v1/auth/me",auth=true);return if(r.value!=null)ApiResult(user(r.value.getJSONObject("user")))else ApiResult(error=r.error)}
+ suspend fun resetPassword(email:String):ApiResult<Unit>{val r=request("POST","/api/v1/auth/password/reset-request",JSONObject().apply{put("email",email)});return if(r.value!=null)ApiResult(Unit)else ApiResult(error=r.error)}
  suspend fun logout():ApiResult<Unit>{val r=request("POST","/api/v1/auth/logout",auth=true);session.clear();return if(r.value!=null||r.error==null)ApiResult(Unit)else ApiResult(error=r.error)}
  suspend fun search(q:String):ApiResult<List<TttUser>>{val r=request("GET","/api/v1/directory/search?q="+URLEncoder.encode(q,"UTF-8"),auth=true);if(r.value==null)return ApiResult(error=r.error);val a=r.value.optJSONArray("results")?:JSONArray();return ApiResult((0 until a.length()).map{user(a.getJSONObject(it))})}
  suspend fun contacts():ApiResult<List<Contact>>{val r=request("GET","/api/v1/contacts",auth=true);if(r.value==null)return ApiResult(error=r.error);val a=r.value.optJSONArray("contacts")?:JSONArray();return ApiResult((0 until a.length()).map{val o=a.getJSONObject(it);Contact(o.optString("id"),user(o.getJSONObject("user")))})}
