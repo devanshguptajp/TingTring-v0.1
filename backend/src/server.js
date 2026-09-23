@@ -26,7 +26,7 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseConfigured = Boolean(supabaseUrl && supabaseServiceRoleKey);
 const supabaseAdmin = supabaseConfigured ? createAuthClient(supabaseUrl, supabaseServiceRoleKey) : null;
 
-function requireSupabase(req, res, next) {
+async function requireOwner(req, res, next) {\n  const profile = await getProfile(supabaseAdmin, req.authUser.id);\n  if (!profile || profile.plan !== "OWNER") return res.status(403).json({ error: "OWNER_ONLY" });\n  req.ownerProfile = profile;\n  next();\n}\n\nfunction validTttUserId(value) { return typeof value === "string" && /^[a-z0-9_]{3,30}$/.test(value); }\n\nasync function resolveTttUserId(value) {\n  const normalized = value.trim().toLowerCase();\n  const direct = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("ttt_user_id", normalized).eq("status", "ACTIVE").maybeSingle();\n  if (direct.error) throw direct.error;\n  if (direct.data) return direct.data;\n  const alias = await supabaseAdmin.from("identity_reservations").select("reserved_for_user_id").eq("ttt_user_id", normalized).maybeSingle();\n  if (alias.error) throw alias.error;\n  if (!alias.data?.reserved_for_user_id) return null;\n  const current = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("id", alias.data.reserved_for_user_id).eq("status", "ACTIVE").maybeSingle();\n  if (current.error) throw current.error;\n  return current.data || null;\n}\n\nfunction requireSupabase(req, res, next) {
   if (!supabaseAdmin) return res.status(503).json({ error: "SUPABASE_NOT_CONFIGURED" });
   next();
 }
@@ -189,6 +189,33 @@ app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res)
   }
 });
 
+app.post("/api/v1/owner/users/:userId/ttt-id", requireSupabase, requireUser, requireOwner, async (req, res) => {
+  try {
+    const newId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim().toLowerCase() : "";
+    if (!validTttUserId(newId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
+    const { data: target, error: targetError } = await supabaseAdmin.from("profiles").select("id,ttt_user_id,status").eq("id", req.params.userId).maybeSingle();
+    if (targetError) throw targetError;
+    if (!target || target.status === "DELETED") return res.status(404).json({ error: "USER_NOT_FOUND" });
+    if (target.ttt_user_id === newId) return res.status(400).json({ error: "TTT_USER_ID_UNCHANGED" });
+    const existing = await supabaseAdmin.from("profiles").select("id").eq("ttt_user_id", newId).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data) return res.status(409).json({ error: "TTT_USER_ID_ALREADY_IN_USE" });
+    const reserved = await supabaseAdmin.from("identity_reservations").select("ttt_user_id").eq("ttt_user_id", newId).maybeSingle();
+    if (reserved.error) throw reserved.error;
+    if (reserved.data) return res.status(409).json({ error: "TTT_USER_ID_RESERVED" });
+    const oldId = target.ttt_user_id;
+    const reserveOld = await supabaseAdmin.from("identity_reservations").upsert({ ttt_user_id: oldId, reserved_for_user_id: target.id, reason: "ID_CHANGED" });
+    if (reserveOld.error) throw reserveOld.error;
+    const update = await supabaseAdmin.from("profiles").update({ ttt_user_id: newId }).eq("id", target.id);
+    if (update.error) throw update.error;
+    await supabaseAdmin.from("audit_logs").insert({ actor_user_id: req.authUser.id, action: "TTT_USER_ID_CHANGED", target_type: "PROFILE", target_id: target.id, metadata: { old_ttt_user_id: oldId, new_ttt_user_id: newId } });
+    res.status(200).json({ user_id: target.id, old_ttt_user_id: oldId, ttt_user_id: newId, existing_contacts_follow_user: true });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "TTT_USER_ID_CHANGE_FAILED" });
+  }
+});
+
 app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) => {
   try {
     const livekitUrl = process.env.LIVEKIT_URL;
@@ -197,7 +224,7 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
     if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
     const targetId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim() : "";
     const callType = req.body?.call_type === "VIDEO" ? "VIDEO" : "AUDIO";
-    if (!/^\d{10}$/.test(targetId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
+    if (!validTttUserId(targetId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
     const { data: target, error: targetError } = await supabaseAdmin.from("profiles")
       .select("id,ttt_user_id,username,display_name,status").eq("ttt_user_id", targetId).eq("status", "ACTIVE").maybeSingle();
     if (targetError) throw targetError;
@@ -290,23 +317,23 @@ app.post("/api/v1/calls/:callId/end", requireSupabase, requireUser, async (req, 
 
 app.get("/api/v1/directory/search", requireSupabase, requireUser, async (req, res) => {
   try {
-    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-    if (q.length < 3 || q.length > 30) return res.status(400).json({ error: "INVALID_SEARCH" });
-    const normalized = q.toLowerCase();
-    const isTttId = /^\d{10}$/.test(normalized);
-    const isUsernamePrefix = /^[a-z0-9_]{3,30}$/.test(normalized);
-    if (!isTttId && !isUsernamePrefix) return res.status(400).json({ error: "INVALID_SEARCH" });
+    const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+    if (!validTttUserId(q)) return res.status(400).json({ error: "INVALID_SEARCH" });
     const { data, error } = await supabaseAdmin.from("profiles")
       .select("id,ttt_user_id,username,display_name,plan,avatar_url,status")
       .eq("status", "ACTIVE")
-      .or("username.ilike."+normalized+"%,ttt_user_id.eq."+normalized)
-      .order("username", { ascending: true })
-      .limit(25);
+      .or("username.ilike."+q+"%,ttt_user_id.eq."+q)
+      .order("username", { ascending: true }).limit(25);
     if (error) throw error;
-    res.status(200).json({ results: (data || []).map(p => ({
-      id:p.id, ttt_user_id:p.ttt_user_id, username:p.username, display_name:p.display_name,
-      plan:p.plan, avatar_url:p.avatar_url, status:p.status
-    })) });
+    const results = [...(data || [])];
+    const alias = await supabaseAdmin.from("identity_reservations").select("reserved_for_user_id").eq("ttt_user_id", q).maybeSingle();
+    if (alias.error) throw alias.error;
+    if (alias.data?.reserved_for_user_id && !results.some(p => p.id === alias.data.reserved_for_user_id)) {
+      const current = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,plan,avatar_url,status").eq("id", alias.data.reserved_for_user_id).eq("status", "ACTIVE").maybeSingle();
+      if (current.error) throw current.error;
+      if (current.data) results.unshift(current.data);
+    }
+    res.status(200).json({ results: results.slice(0,25).map(p => ({ id:p.id, ttt_user_id:p.ttt_user_id, username:p.username, display_name:p.display_name, plan:p.plan, avatar_url:p.avatar_url, status:p.status })) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "DIRECTORY_SEARCH_FAILED" });
