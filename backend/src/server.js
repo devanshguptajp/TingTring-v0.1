@@ -192,7 +192,7 @@ app.get("/api/v1/directory/search", requireSupabase, requireUser, async (req, re
     const normalized = q.toLowerCase();
     const { data, error } = await supabaseAdmin.rpc("search_profile_directory", { search_text: normalized });
     if (error) throw error;
-    res.status(200).json({ results: (data || []).map(publicProfile) });
+    res.status(200).json({ results: (data || []).map(p => ({ id:p.id, ttt_user_id:p.ttt_user_id, username:p.username, display_name:p.display_name, plan:"FREE", avatar_url:p.avatar_url, status:"ACTIVE" })) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "DIRECTORY_SEARCH_FAILED" });
