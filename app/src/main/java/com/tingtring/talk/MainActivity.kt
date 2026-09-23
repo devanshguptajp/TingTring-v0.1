@@ -71,12 +71,12 @@ class MainActivity:ComponentActivity(){
   TextButton(onClick={mode=when(mode){"login"->"otp";"otp"->"forgot";"forgot"->"login";else->"login"};sent=false;error=null},modifier=Modifier.fillMaxWidth()){Text(when(mode){"login"->"Use email OTP";"otp"->"Forgot password?";"forgot"->"Back to sign in";else->"Already have an account? Sign in"})}
  }}
 }
-@Composable private fun Field(value:String,onChange:(String)->Unit,label:String,type:KeyboardType=KeyboardType.Text,password:Boolean=false)=VanyaCorrectionField(value=value,onValueChange=onChange,label=label,modifier=Modifier.fillMaxWidth(),keyboardOptions=KeyboardOptions(keyboardType=type),password=password)
+@Composable private fun Field(value:String,onChange:(String)->Unit,label:String,type:KeyboardType=KeyboardType.Text,password:Boolean=false)=OutlinedTextField(value,onChange,label={Text(label)},singleLine=true,modifier=Modifier.fillMaxWidth(),keyboardOptions=KeyboardOptions(keyboardType=type),visualTransformation=if(password)PasswordVisualTransformation()else androidx.compose.ui.text.input.VisualTransformation.None)
 
 @Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
  var selected by rememberSaveable{mutableIntStateOf(0)};Scaffold(bottomBar={NavigationBar{
   NavigationBarItem(selected==0,{selected=0},{Icon(Icons.Default.Home,null)},label={Text("Home")});NavigationBarItem(selected==1,{selected=1},{Icon(Icons.Default.People,null)},label={Text("Contacts")});NavigationBarItem(selected==2,{selected=2},{Icon(Icons.Default.Person,null)},label={Text("Profile")})
- }}){p->when(selected){0->Home(user,Modifier.padding(p));1->Contacts(api,onStartCall,Modifier.padding(p));2->Profile(api,user,onLogout,Modifier.padding(p))}}
+ }}){p->when(selected){0->Home(user,Modifier.padding(p));1->Contacts(api,onStartCall,user.plan != "OWNER",Modifier.padding(p));2->Profile(api,user,onLogout,Modifier.padding(p))}}
 }
 @Composable private fun Home(user:TttUser,modifier:Modifier=Modifier)=Column(modifier.fillMaxSize().padding(22.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
  Text("Good to see you.",style=MaterialTheme.typography.titleMedium);Text(user.displayName,style=MaterialTheme.typography.headlineLarge)
@@ -84,10 +84,10 @@ class MainActivity:ComponentActivity(){
  Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp)){Column(Modifier.padding(20.dp)){Text("Calling is next",style=MaterialTheme.typography.titleLarge);Text("Your identity, contacts and account are ready for the calling system.")}}
 }
 
-@Composable private fun Contacts(api:ApiClient,onStartCall:(CallSession)->Unit,modifier:Modifier=Modifier){
+@Composable private fun Contacts(api:ApiClient,onStartCall:(CallSession)->Unit,vanyaAnimationEnabled:Boolean,modifier:Modifier=Modifier){
  var query by rememberSaveable{mutableStateOf("")};var results by remember{mutableStateOf<List<TttUser>>(emptyList())};var contacts by remember{mutableStateOf<List<Contact>>(emptyList())};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope()
  LaunchedEffect(Unit){contacts=api.contacts().value?:emptyList()}
- Column(modifier.fillMaxSize().padding(18.dp)){Text("Contacts",style=MaterialTheme.typography.headlineLarge);Spacer(Modifier.height(12.dp));VanyaCorrectionField(query,{query=it},label="Username or 10-digit ID",modifier=Modifier.fillMaxWidth())
+ Column(modifier.fillMaxSize().padding(18.dp)){Text("Contacts",style=MaterialTheme.typography.headlineLarge);Spacer(Modifier.height(12.dp));VanyaCorrectionField(query,{query=it},label="Username or TingTring ID",modifier=Modifier.fillMaxWidth(),enabled=vanyaAnimationEnabled)
  Spacer(Modifier.height(8.dp));Button(onClick={scope.launch{val r=api.search(query);results=r.value?:emptyList();error=r.error}},enabled=query.length>=3){Icon(Icons.Default.Search,null);Spacer(Modifier.width(8.dp));Text("Search")}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(8.dp))}
  LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)){items(results){u->UserRow(u,"Add","Call",{scope.launch{val r=api.addContact(u.tttUserId);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(u.tttUserId);error=r.error;r.value?.let(onStartCall)}})};if(results.isEmpty())item{Text("Saved contacts",style=MaterialTheme.typography.titleLarge)};items(contacts){c->UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let(onStartCall)}})}}}
