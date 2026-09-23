@@ -10,6 +10,7 @@ import android.telecom.TelecomManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -102,16 +103,18 @@ class MainActivity:ComponentActivity(){
  var connected by remember{mutableStateOf(false)}
  var muted by remember{mutableStateOf(false)}
  var error by remember{mutableStateOf<String?>(null)}
+ var permissionGranted by remember{mutableStateOf(androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)}
  val scope=rememberCoroutineScope()
+ val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){permissionGranted=it;if(!it)error="Microphone permission is required"}
  val room=remember{LiveKit.create(appContext=context.applicationContext)}
  DisposableEffect(Unit){
   onDispose{runCatching{room.disconnect();room.release()}}
  }
- LaunchedEffect(session.callId){
-  if(androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
-   error="Microphone permission is required"
-   return@LaunchedEffect
-  }
+ LaunchedEffect(Unit){
+  if(!permissionGranted) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+ }
+ LaunchedEffect(session.callId,permissionGranted){
+  if(!permissionGranted)return@LaunchedEffect
   try{
    room.connect(session.livekitUrl,session.token)
    if(!room.localParticipant.setMicrophoneEnabled(true)) throw IllegalStateException("MICROPHONE_ENABLE_FAILED")
