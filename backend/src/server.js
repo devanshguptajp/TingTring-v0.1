@@ -173,7 +173,8 @@ app.post("/api/v1/auth/logout", requireSupabase, requireUser, async (req, res) =
 
 app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res) => {
   try {
-    const { username, display_name } = req.body || {};
+    const { display_name } = req.body || {};
+    const username = typeof req.body?.username === "string" ? req.body.username.trim().toLowerCase() : "";
     if (!validateUsername(username) || !validateDisplayName(display_name)) return res.status(400).json({ error: "INVALID_PROFILE" });
     const existing = await getProfile(supabaseAdmin, req.authUser.id);
     if (existing) return res.status(409).json({ error: "PROFILE_ALREADY_EXISTS", user: publicProfile(existing) });
@@ -211,13 +212,64 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
       { call_id: call.id, user_id: req.authUser.id, role: "CALLER", status: "RINGING" },
       { call_id: call.id, user_id: target.id, role: "CALLEE", status: "RINGING" }
     ]);
-    if (participantError) throw participantError;
+    if (participantError) {
+      await supabaseAdmin.from("calls").delete().eq("id", call.id);
+      throw participantError;
+    }
+    await supabaseAdmin.from("notifications").insert({
+      user_id: target.id,
+      kind: "INCOMING_CALL",
+      title: "Incoming TingTring call",
+      body: req.authUser.user_metadata?.display_name || "TingTring user",
+      data: { call_id: call.id, call_type: callType, room_name: roomName }
+    });
     const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
     token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
     res.status(201).json({ call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(), call_type: callType });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "CALL_START_FAILED" });
+  }
+});
+
+app.post("/api/v1/calls/:callId/accept", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const livekitKey = process.env.LIVEKIT_API_KEY;
+    const livekitSecret = process.env.LIVEKIT_API_SECRET;
+    if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
+    const { data: participant, error: lookupError } = await supabaseAdmin.from("call_participants")
+      .select("call_id,call:call_id(id,created_by,call_type,status,livekit_room_name)")
+      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("role", "CALLEE").maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!participant?.call) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    if (participant.call.status !== "RINGING") return res.status(409).json({ error: "CALL_NOT_RINGING" });
+    const { error: callError } = await supabaseAdmin.from("calls").update({ status: "ACCEPTED", connected_at: new Date().toISOString(), started_at: new Date().toISOString() }).eq("id", req.params.callId).eq("status", "RINGING");
+    if (callError) throw callError;
+    const { error: participantError } = await supabaseAdmin.from("call_participants").update({ status: "ACCEPTED", joined_at: new Date().toISOString() }).eq("call_id", req.params.callId).eq("user_id", req.authUser.id);
+    if (participantError) throw participantError;
+    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
+    token.addGrant({ roomJoin: true, room: participant.call.livekit_room_name, canPublish: true, canSubscribe: true });
+    res.status(200).json({ call_id: participant.call.id, room_name: participant.call.livekit_room_name, livekit_url: livekitUrl, token: await token.toJwt(), call_type: participant.call.call_type });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "CALL_ACCEPT_FAILED" });
+  }
+});
+
+app.post("/api/v1/calls/:callId/decline", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { data: participant, error: lookupError } = await supabaseAdmin.from("call_participants")
+      .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("role", "CALLEE").maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!participant) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    await supabaseAdmin.from("call_participants").update({ status: "DECLINED", left_at: new Date().toISOString() }).eq("call_id", req.params.callId).eq("user_id", req.authUser.id);
+    const { error } = await supabaseAdmin.from("calls").update({ status: "DECLINED", ended_at: new Date().toISOString() }).eq("id", req.params.callId);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "CALL_DECLINE_FAILED" });
   }
 });
 
@@ -241,11 +293,13 @@ app.get("/api/v1/directory/search", requireSupabase, requireUser, async (req, re
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (q.length < 3 || q.length > 30) return res.status(400).json({ error: "INVALID_SEARCH" });
     const normalized = q.toLowerCase();
-    const pattern = normalized.replace(/[%_,]/g, "");
+    const isTttId = /^\d{10}$/.test(normalized);
+    const isUsernamePrefix = /^[a-z0-9_]{3,30}$/.test(normalized);
+    if (!isTttId && !isUsernamePrefix) return res.status(400).json({ error: "INVALID_SEARCH" });
     const { data, error } = await supabaseAdmin.from("profiles")
       .select("id,ttt_user_id,username,display_name,plan,avatar_url,status")
       .eq("status", "ACTIVE")
-      .or("username.ilike."+pattern+"%,ttt_user_id.eq."+pattern)
+      .or("username.ilike."+normalized+"%,ttt_user_id.eq."+normalized)
       .order("username", { ascending: true })
       .limit(25);
     if (error) throw error;
