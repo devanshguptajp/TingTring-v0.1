@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -53,7 +54,8 @@ app.get("/api/v1/health", (_req, res) => res.status(200).json({
 
 app.post("/api/v1/auth/signup", requireSupabase, async (req, res) => {
   try {
-    const { email, password, username, display_name } = req.body || {};
+    const { email, password, display_name } = req.body || {};
+    const username = typeof req.body?.username === "string" ? req.body.username.trim().toLowerCase() : "";
     const normalizedEmail = typeof email === "string" ? normalizeEmail(email) : "";
     if (!validateEmail(normalizedEmail) || typeof password !== "string" || password.length < 8) return res.status(400).json({ error: "INVALID_SIGNUP" });
     if (!validateUsername(username) || !validateDisplayName(display_name)) return res.status(400).json({ error: "INVALID_PROFILE" });
@@ -200,7 +202,7 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
     if (targetError) throw targetError;
     if (!target) return res.status(404).json({ error: "USER_NOT_FOUND" });
     if (target.id === req.authUser.id) return res.status(400).json({ error: "CANNOT_CALL_SELF" });
-    const roomName = "ttt_" + crypto.randomUUID();
+    const roomName = "ttt_" + randomUUID();
     const { data: call, error: callError } = await supabaseAdmin.from("calls")
       .insert({ created_by: req.authUser.id, call_type: callType, status: "RINGING", livekit_room_name: roomName })
       .select("id,call_type,status,livekit_room_name,created_at").single();
@@ -318,7 +320,7 @@ app.patch("/api/v1/profile", requireSupabase, requireUser, async (req, res) => {
     const updates = {};
     if (username !== undefined) {
       if (!validateUsername(username)) return res.status(400).json({ error: "INVALID_USERNAME" });
-      updates.username = username;
+      updates.username = username.trim().toLowerCase();
     }
     if (display_name !== undefined) {
       if (!validateDisplayName(display_name)) return res.status(400).json({ error: "INVALID_DISPLAY_NAME" });
