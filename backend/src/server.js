@@ -189,6 +189,26 @@ app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res)
   }
 });
 
+app.get("/api/v1/owner/users/search", requireSupabase, requireUser, requireOwner, async (req, res) => {
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+    if (q.length < 3) return res.status(400).json({ error: "INVALID_QUERY" });
+    const isId = /^[a-z0-9_]{3,30}$/.test(q);
+    const isEmail = q.includes("@") && q.length <= 320;
+    let query = supabaseAdmin.from("profiles")
+      .select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url")
+      .limit(20);
+    if (isEmail) query = query.ilike("email", q);
+    else if (isId) query = query.or("ttt_user_id.eq."+q+",username.ilike."+q+"%");
+    else query = query.or("username.ilike."+q+"%,display_name.ilike."+q+"%");
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (error) return res.status(500).json({ error: "OWNER_SEARCH_FAILED" });
+    return res.status(200).json({ results: data || [] });
+  } catch {
+    return res.status(500).json({ error: "OWNER_SEARCH_FAILED" });
+  }
+});
+
 app.post("/api/v1/owner/users/:userId/ttt-id", requireSupabase, requireUser, requireOwner, async (req, res) => {
   try {
     const newId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim().toLowerCase() : "";
