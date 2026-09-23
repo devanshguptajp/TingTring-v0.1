@@ -29,3 +29,6 @@ jobs:
 
       - name: Syntax check
         run: npm run check
+
+      - name: Backend smoke tests
+        run: npm test
