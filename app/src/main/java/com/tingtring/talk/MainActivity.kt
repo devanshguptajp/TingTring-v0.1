@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -76,7 +77,8 @@ class MainActivity:ComponentActivity(){
 @Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
  var selected by rememberSaveable{mutableIntStateOf(0)};Scaffold(bottomBar={NavigationBar{
   NavigationBarItem(selected==0,{selected=0},{Icon(Icons.Default.Home,null)},label={Text("Home")});NavigationBarItem(selected==1,{selected=1},{Icon(Icons.Default.People,null)},label={Text("Contacts")});NavigationBarItem(selected==2,{selected=2},{Icon(Icons.Default.Person,null)},label={Text("Profile")})
- }}){p->when(selected){0->Home(user,Modifier.padding(p));1->Contacts(api,onStartCall,user.plan != "OWNER",Modifier.padding(p));2->Profile(api,user,onLogout,Modifier.padding(p))}}
+  if(user.plan=="OWNER") NavigationBarItem(selected==3,{selected=3},{Icon(Icons.Default.Settings,null)},label={Text("Owner")})
+ }}){p->when(selected){0->Home(user,Modifier.padding(p));1->Contacts(api,onStartCall,user.plan != "OWNER",Modifier.padding(p));2->Profile(api,user,onLogout,Modifier.padding(p));3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onLogout,Modifier.padding(p))}}
 }
 @Composable private fun Home(user:TttUser,modifier:Modifier=Modifier)=Column(modifier.fillMaxSize().padding(22.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
  Text("Good to see you.",style=MaterialTheme.typography.titleMedium);Text(user.displayName,style=MaterialTheme.typography.headlineLarge)
