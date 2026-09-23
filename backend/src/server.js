@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { AccessToken } from "livekit-server-sdk";
 import {
   createAuthClient, getAuthenticatedUser, getProfile, ensureProfile,
   publicProfile, authResponse, normalizeEmail, validateEmail,
@@ -182,6 +183,54 @@ app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res)
     if (error.code === "USERNAME_ALREADY_IN_USE") return res.status(409).json({ error: error.code });
     console.error(error);
     res.status(500).json({ error: "PROFILE_SETUP_FAILED" });
+  }
+});
+
+app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const livekitKey = process.env.LIVEKIT_API_KEY;
+    const livekitSecret = process.env.LIVEKIT_API_SECRET;
+    if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
+    const targetId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim() : "";
+    const callType = req.body?.call_type === "VIDEO" ? "VIDEO" : "AUDIO";
+    if (!/^\\d{10}$/.test(targetId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
+    const { data: target, error: targetError } = await supabaseAdmin.from("profiles")
+      .select("id,ttt_user_id,username,display_name,status").eq("ttt_user_id", targetId).eq("status", "ACTIVE").maybeSingle();
+    if (targetError) throw targetError;
+    if (!target) return res.status(404).json({ error: "USER_NOT_FOUND" });
+    if (target.id === req.authUser.id) return res.status(400).json({ error: "CANNOT_CALL_SELF" });
+    const roomName = "ttt_" + crypto.randomUUID();
+    const { data: call, error: callError } = await supabaseAdmin.from("calls")
+      .insert({ created_by: req.authUser.id, call_type: callType, status: "RINGING", livekit_room_name: roomName })
+      .select("id,call_type,status,livekit_room_name,created_at").single();
+    if (callError) throw callError;
+    const { error: participantError } = await supabaseAdmin.from("call_participants").insert([
+      { call_id: call.id, user_id: req.authUser.id, role: "CALLER", status: "RINGING" },
+      { call_id: call.id, user_id: target.id, role: "CALLEE", status: "RINGING" }
+    ]);
+    if (participantError) throw participantError;
+    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
+    token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
+    res.status(201).json({ call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(), call_type: callType });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "CALL_START_FAILED" });
+  }
+});
+
+app.post("/api/v1/calls/:callId/end", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { data: participant, error: participantError } = await supabaseAdmin.from("call_participants")
+      .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
+    if (participantError) throw participantError;
+    if (!participant) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    const { error } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString() }).eq("id", req.params.callId);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "CALL_END_FAILED" });
   }
 });
 
