@@ -196,7 +196,7 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
     if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
     const targetId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim() : "";
     const callType = req.body?.call_type === "VIDEO" ? "VIDEO" : "AUDIO";
-    if (!/^\\d{10}$/.test(targetId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
+    if (!/^\d{10}$/.test(targetId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
     const { data: target, error: targetError } = await supabaseAdmin.from("profiles")
       .select("id,ttt_user_id,username,display_name,status").eq("ttt_user_id", targetId).eq("status", "ACTIVE").maybeSingle();
     if (targetError) throw targetError;
@@ -275,7 +275,7 @@ app.get("/api/v1/contacts", requireSupabase, requireUser, async (req, res) => {
 app.post("/api/v1/contacts", requireSupabase, requireUser, async (req, res) => {
   try {
     const tttUserId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim() : "";
-    if (!/^\\d{10}$/.test(tttUserId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
+    if (!/^\d{10}$/.test(tttUserId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
     const { data: contact, error: lookupError } = await supabaseAdmin.from("profiles")
       .select("id,ttt_user_id,username,display_name,plan,avatar_url,status,created_at,updated_at,last_seen_at")
       .eq("ttt_user_id", tttUserId).eq("status", "ACTIVE").maybeSingle();
