@@ -233,6 +233,57 @@ app.get("/api/v1/owner/users/search", requireSupabase, requireUser, requireOwner
   }
 });
 
+app.get("/api/v1/owner/count", requireSupabase, requireUser, requireOwner, async (_req, res) => {
+  try {
+    const { count, error } = await supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "OWNER");
+    if (error) throw error;
+    res.status(200).json({ count: count || 0, max: 5 });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "OWNER_COUNT_FAILED" });
+  }
+});
+
+app.post("/api/v1/owner/users/:userId/grant", requireSupabase, requireUser, requireOwner, async (req, res) => {
+  try {
+    const targetId = req.params.userId;
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    if (!password) return res.status(400).json({ error: "PASSWORD_REQUIRED" });
+    if (req.body?.confirmation_count !== 10) return res.status(400).json({ error: "CONFIRMATIONS_REQUIRED" });
+    if (targetId === req.authUser.id) return res.status(400).json({ error: "ALREADY_OWNER" });
+
+    const { count, error: countError } = await supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "OWNER");
+    if (countError) throw countError;
+    if ((count || 0) >= 5) return res.status(409).json({ error: "OWNER_LIMIT_REACHED" });
+
+    const { data: target, error: targetError } = await supabaseAdmin.from("profiles").select("id,username,display_name,plan,status").eq("id", targetId).maybeSingle();
+    if (targetError) throw targetError;
+    if (!target || target.status !== "ACTIVE") return res.status(404).json({ error: "USER_NOT_FOUND" });
+    if (target.plan === "OWNER") return res.status(409).json({ error: "ALREADY_OWNER" });
+
+    const { data: actorProfile, error: actorError } = await supabaseAdmin.from("profiles").select("email").eq("id", req.authUser.id).single();
+    if (actorError) throw actorError;
+    if (!actorProfile?.email) return res.status(400).json({ error: "OWNER_EMAIL_UNAVAILABLE" });
+
+    const { data: authCheck, error: authError } = await supabaseAdmin.auth.signInWithPassword({ email: actorProfile.email, password });
+    if (authError || !authCheck?.user) return res.status(401).json({ error: "PASSWORD_REAUTH_FAILED" });
+
+    const { error: updateError } = await supabaseAdmin.from("profiles").update({ plan: "OWNER" }).eq("id", targetId).eq("plan", "FREE");
+    if (updateError) throw updateError;
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_user_id: req.authUser.id,
+      action: "OWNER_GRANTED",
+      target_type: "PROFILE",
+      target_id: targetId,
+      metadata: { confirmation_count: 10 }
+    });
+    res.status(200).json({ status: "OWNER_GRANTED", user_id: target.id, display_name: target.display_name, username: target.username });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "OWNER_GRANT_FAILED" });
+  }
+});
+
 app.post("/api/v1/owner/users/:userId/ttt-id", requireSupabase, requireUser, requireOwner, async (req, res) => {
   try {
     const newId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim().toLowerCase() : "";
