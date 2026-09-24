@@ -155,7 +155,8 @@ class MainActivity:ComponentActivity(){
  }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)\n@Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
  var selected by rememberSaveable{mutableIntStateOf(0)};Scaffold(topBar={CenterAlignedTopAppBar(title={Text("TingTring",fontWeight=FontWeight.Bold)})},bottomBar={NavigationBar{
   NavigationBarItem(selected==0,{selected=0},{Icon(Icons.Default.Home,null)},label={Text("Home")});NavigationBarItem(selected==1,{selected=1},{Icon(Icons.Default.People,null)},label={Text("Contacts")});NavigationBarItem(selected==2,{selected=2},{Icon(Icons.Default.Person,null)},label={Text("Profile")})
   if(user.plan=="OWNER") NavigationBarItem(selected==3,{selected=3},{Icon(Icons.Default.Settings,null)},label={Text("Owner")})
