@@ -178,7 +178,41 @@ class MainActivity:ComponentActivity(){
 @Composable private fun UserRow(user:TttUser,action:String,callAction:String,onAction:()->Unit,onCall:()->Unit)=Card(Modifier.fillMaxWidth()){Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(user.displayName,fontWeight=FontWeight.SemiBold);Text("@"+user.username+" • "+user.tttUserId,style=MaterialTheme.typography.bodySmall)};TextButton(onClick=onCall){Text(callAction)};TextButton(onClick=onAction){Text(action)}}}
 
 @Composable private fun Profile(api:ApiClient,user:TttUser,onLogout:()->Unit,modifier:Modifier=Modifier){
- val scope=rememberCoroutineScope();Column(modifier.fillMaxSize().padding(22.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Text("Profile",style=MaterialTheme.typography.headlineLarge);Text(user.displayName,style=MaterialTheme.typography.titleLarge);Text("@"+user.username);Text("TingTring ID: "+user.tttUserId);Text("Plan: "+user.plan);Spacer(Modifier.height(12.dp));OutlinedButton(onClick={scope.launch{api.logout();onLogout()}},modifier=Modifier.fillMaxWidth()){Text("Sign out")}}
+ val scope=rememberCoroutineScope()
+ var username by rememberSaveable{mutableStateOf(user.username)}
+ var displayName by rememberSaveable{mutableStateOf(user.displayName)}
+ var saving by remember{mutableStateOf(false)}
+ var message by remember{mutableStateOf<String?>(null)}
+ var error by remember{mutableStateOf<String?>(null)}
+ Column(modifier.fillMaxSize().padding(22.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+  Text("Profile",style=MaterialTheme.typography.headlineLarge,fontWeight=FontWeight.Bold)
+  Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(24.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.primaryContainer)){
+   Column(Modifier.padding(20.dp)){
+    Text("Your TingTring identity",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+    Text(user.tttUserId,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=6.dp))
+    Text("Your 10-digit ID stays yours even if your username changes.",style=MaterialTheme.typography.bodyMedium,color=MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=.78f),modifier=Modifier.padding(top=4.dp))
+   }
+  }
+  VanyaCorrectionField(username,{username=it.lowercase()},"Username",enabled=!saving)
+  VanyaCorrectionField(displayName,{displayName=it},"Display name",enabled=!saving)
+  message?.let{Text(it,color=MaterialTheme.colorScheme.primary)}
+  error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
+  Button(
+   onClick={
+    saving=true;message=null;error=null
+    scope.launch{
+     val r=api.updateProfile(username,displayName)
+     if(r.value!=null)message="Profile updated." else error=r.error
+     saving=false
+    }
+   },
+   enabled=!saving && username!=user.username || !saving && displayName!=user.displayName,
+   modifier=Modifier.fillMaxWidth().height(52.dp),
+   shape=RoundedCornerShape(17.dp)
+  ){if(saving)CircularProgressIndicator(Modifier.size(20.dp),color=MaterialTheme.colorScheme.onPrimary)else Text("Save changes",fontWeight=FontWeight.SemiBold)}
+  Text("Plan: "+user.plan,style=MaterialTheme.typography.bodyLarge)
+  OutlinedButton(onClick={scope.launch{api.logout();onLogout()}},modifier=Modifier.fillMaxWidth()){Text("Sign out")}
+ }
 }
 
 
