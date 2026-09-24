@@ -55,7 +55,15 @@ class MainActivity:ComponentActivity(){
 
 @Composable private fun App(api:ApiClient,session:SessionStore){
  var user by remember{mutableStateOf<TttUser?>(null)};var activeCall by remember{mutableStateOf<CallSession?>(null)};var checking by remember{mutableStateOf(session.accessToken!=null)}
- LaunchedEffect(Unit){if(session.accessToken!=null){val r=api.me();user=r.value;if(r.value==null)session.clear()};checking=false}
+ LaunchedEffect(Unit){
+  if(session.accessToken!=null){
+    var r=api.me()
+    if(r.value==null && session.refreshToken!=null) r=api.refreshSession()
+    user=r.value
+    if(r.value==null)session.clear()
+  }
+  checking=false
+}
  if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
  else if(user==null)AuthScreen(api){user=it}else if(activeCall!=null)CallScreen(api,activeCall!!){activeCall=null}else MainShell(api,user!!,{activeCall=it}){user=null;session.clear()}
 }
@@ -77,7 +85,7 @@ class MainActivity:ComponentActivity(){
   scope.launch{
    when{
     mode=="forgot"->{val r=api.resetPassword(email);if(r.error!=null)error=r.error}
-    mode=="signup"->{val r=api.signup(email,password,username,display);if(r.value!=null)onSignedIn(r.value)else error=r.error}
+    mode=="signup"->{val r=api.signup(email,password,username,display);if(r.value!=null)onSignedIn(r.value)else if(r.error=="EMAIL_VERIFICATION_REQUIRED"){mode="otp";sent=false;error="Check your email, then request a 6-digit code to finish signing in."}else error=r.error}
     mode=="otp"&&!sent->{val r=api.startOtp(email);if(r.error==null)sent=true else error=r.error}
     mode=="otp"->{val r=api.verifyOtp(email,otp);if(r.value!=null)onSignedIn(r.value)else error=r.error}
     else->{val r=api.passwordLogin(email,password);if(r.value!=null)onSignedIn(r.value)else error=r.error}
