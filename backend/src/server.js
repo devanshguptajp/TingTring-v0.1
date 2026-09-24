@@ -313,8 +313,12 @@ app.post("/api/v1/calls/:callId/accept", requireSupabase, requireUser, async (re
     if (lookupError) throw lookupError;
     if (!participant?.call) return res.status(404).json({ error: "CALL_NOT_FOUND" });
     if (participant.call.status !== "RINGING") return res.status(409).json({ error: "CALL_NOT_RINGING" });
-    const { error: callError } = await supabaseAdmin.from("calls").update({ status: "ACCEPTED", connected_at: new Date().toISOString(), started_at: new Date().toISOString() }).eq("id", req.params.callId).eq("status", "RINGING");
+    const { data: acceptedCall, error: callError } = await supabaseAdmin.from("calls")
+      .update({ status: "ACCEPTED", connected_at: new Date().toISOString(), started_at: new Date().toISOString() })
+      .eq("id", req.params.callId).eq("status", "RINGING")
+      .select("id").maybeSingle();
     if (callError) throw callError;
+    if (!acceptedCall) return res.status(409).json({ error: "CALL_NOT_RINGING" });
     const { error: participantError } = await supabaseAdmin.from("call_participants").update({ status: "ACCEPTED", joined_at: new Date().toISOString() }).eq("call_id", req.params.callId).eq("user_id", req.authUser.id);
     if (participantError) throw participantError;
     const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
@@ -332,8 +336,10 @@ app.post("/api/v1/calls/:callId/decline", requireSupabase, requireUser, async (r
       .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("role", "CALLEE").maybeSingle();
     if (lookupError) throw lookupError;
     if (!participant) return res.status(404).json({ error: "CALL_NOT_FOUND" });
-    await supabaseAdmin.from("call_participants").update({ status: "DECLINED", left_at: new Date().toISOString() }).eq("call_id", req.params.callId).eq("user_id", req.authUser.id);
-    const { error } = await supabaseAdmin.from("calls").update({ status: "DECLINED", ended_at: new Date().toISOString() }).eq("id", req.params.callId);
+    await supabaseAdmin.from("call_participants").update({ status: "DECLINED", left_at: new Date().toISOString() })
+      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("status", "RINGING");
+    const { error } = await supabaseAdmin.from("calls").update({ status: "DECLINED", ended_at: new Date().toISOString() })
+      .eq("id", req.params.callId).eq("status", "RINGING");
     if (error) throw error;
     res.status(204).send();
   } catch (error) {
@@ -348,7 +354,10 @@ app.post("/api/v1/calls/:callId/end", requireSupabase, requireUser, async (req, 
       .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
     if (participantError) throw participantError;
     if (!participant) return res.status(404).json({ error: "CALL_NOT_FOUND" });
-    const { error } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString() }).eq("id", req.params.callId);
+    await supabaseAdmin.from("call_participants").update({ status: "ENDED", left_at: new Date().toISOString() })
+      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).neq("status", "ENDED");
+    const { error } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString() })
+      .eq("id", req.params.callId).in("status", ["RINGING", "ACCEPTED"]);
     if (error) throw error;
     res.status(204).send();
   } catch (error) {
