@@ -10,14 +10,14 @@ class TttConnectionService : ConnectionService() {
         phoneAccountHandle: PhoneAccountHandle,
         request: ConnectionRequest
     ): Connection {
-        return TttConnection().apply { setRinging() }
+        return TttConnection()
     }
 
     override fun onCreateOutgoingConnection(
         phoneAccountHandle: PhoneAccountHandle,
         request: ConnectionRequest
     ): Connection {
-        return TttConnection().apply { setDialing() }
+        return TttConnection()
     }
 
     private class TttConnection : Connection() {
