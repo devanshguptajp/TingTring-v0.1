@@ -39,7 +39,7 @@ class TttConnectionService : ConnectionService() {
     private fun createConnection(request: ConnectionRequest): Connection {
         val connection = TttConnection()
         val address = request.address ?: Uri.parse("ttt:unknown")
-        connection.setAddress(address, TelecomLogPrivacy.PRIORITY_NORMAL)
+        connection.setAddress(address, Connection.PRESENTATION_ALLOWED)
         val displayName = request.extras?.getString("display_name")
             ?.takeIf { it.isNotBlank() }
             ?: "TingTring"
@@ -69,8 +69,4 @@ class TttConnectionService : ConnectionService() {
         override fun onHold() = setOnHold()
         override fun onUnhold() = setActive()
     }
-}
-
-private object TelecomLogPrivacy {
-    const val PRIORITY_NORMAL = 0
 }
