@@ -45,17 +45,17 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(user.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("@§{user.username}")
-                    Text("Current ID: §{user.tttUserId}")
-                    Text("Plan: §{user.plan}")
-                    Text("Status: §{user.status}")
+                    Text("@${user.username}")
+                    Text("Current ID: ${user.tttUserId}")
+                    Text("Plan: ${user.plan}")
+                    Text("Status: ${user.status}")
                     OutlinedTextField(value = newId, onValueChange = { newId = it.lowercase() }, label = { Text("New TingTring ID") }, supportingText = { Text("3–30 lowercase letters, digits, or underscores") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Button(enabled = newId.matches(Regex("[a-z0-9_]{3,30}")) && newId != user.tttUserId && !loading, onClick = {
                         scope.launch {
                             loading = true; error = null; message = null
                             val r = api.ownerChangeTttId(user.id, newId)
                             if (r.value != null) {
-                                message = "ID changed from §{r.value.first} to §{r.value.second}. Existing contacts follow the account."
+                                message = "ID changed from ${r.value.first} to ${r.value.second}. Existing contacts follow the account."
                                 selected = user.copy(tttUserId = r.value.second)
                                 newId = ""
                                 results = results.map { if (it.id == user.id) it.copy(tttUserId = r.value.second) else it }
@@ -73,7 +73,7 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
                 OutlinedCard(onClick = { selected = user; newId = ""; error = null; message = null }, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp)) {
                         Text(user.displayName, fontWeight = FontWeight.SemiBold)
-                        Text("@§{user.username} • §{user.tttUserId}")
+                        Text("@${user.username} • ${user.tttUserId}")
                         Text(user.plan, style = MaterialTheme.typography.bodySmall)
                     }
                 }
