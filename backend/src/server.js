@@ -33,7 +33,8 @@ async function requireOwner(req, res, next) {
   next();
 }
 
-function validTttUserId(value) { return typeof value === "string" && /^[a-z0-9_]{3,30}$/.test(value); }
+function validTttUserId(value) { return typeof value === "string" && /^\d{10}$/.test(value); }
+function validDirectoryQuery(value) { return typeof value === "string" && (/^\d{10}$/.test(value) || /^[a-z0-9_]{3,30}$/.test(value)); }
 
 async function resolveTttUserId(value) {
   const normalized = value.trim().toLowerCase();
@@ -359,7 +360,7 @@ app.post("/api/v1/calls/:callId/end", requireSupabase, requireUser, async (req, 
 app.get("/api/v1/directory/search", requireSupabase, requireUser, async (req, res) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
-    if (!validTttUserId(q)) return res.status(400).json({ error: "INVALID_SEARCH" });
+    if (!validDirectoryQuery(q)) return res.status(400).json({ error: "INVALID_SEARCH" });
     const { data, error } = await supabaseAdmin.from("profiles")
       .select("id,ttt_user_id,username,display_name,plan,avatar_url,status")
       .eq("status", "ACTIVE")
