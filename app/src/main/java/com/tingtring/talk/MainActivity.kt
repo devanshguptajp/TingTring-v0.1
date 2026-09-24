@@ -61,28 +61,91 @@ class MainActivity:ComponentActivity(){
 }
 
 @Composable private fun AuthScreen(api:ApiClient,onSignedIn:(TttUser)->Unit){
- var mode by rememberSaveable{mutableStateOf("login")};var email by rememberSaveable{mutableStateOf("")};var password by rememberSaveable{mutableStateOf("")};var username by rememberSaveable{mutableStateOf("")};var display by rememberSaveable{mutableStateOf("")};var otp by rememberSaveable{mutableStateOf("")};var sent by rememberSaveable{mutableStateOf(false)};var loading by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope()
+ var mode by rememberSaveable{mutableStateOf("login")}
+ var email by rememberSaveable{mutableStateOf("")}
+ var password by rememberSaveable{mutableStateOf("")}
+ var username by rememberSaveable{mutableStateOf("")}
+ var display by rememberSaveable{mutableStateOf("")}
+ var otp by rememberSaveable{mutableStateOf("")}
+ var sent by rememberSaveable{mutableStateOf(false)}
+ var loading by remember{mutableStateOf(false)}
+ var error by remember{mutableStateOf<String?>(null)}
+ val scope=rememberCoroutineScope()
+
  fun submit(){
-  loading=true;error=null;scope.launch{
+  loading=true;error=null
+  scope.launch{
    when{
-    mode=="forgot"->{val r=api.resetPassword(email);if(r.error==null)error=null else error=r.error}
+    mode=="forgot"->{val r=api.resetPassword(email);if(r.error!=null)error=r.error}
     mode=="signup"->{val r=api.signup(email,password,username,display);if(r.value!=null)onSignedIn(r.value)else error=r.error}
     mode=="otp"&&!sent->{val r=api.startOtp(email);if(r.error==null)sent=true else error=r.error}
     mode=="otp"->{val r=api.verifyOtp(email,otp);if(r.value!=null)onSignedIn(r.value)else error=r.error}
     else->{val r=api.passwordLogin(email,password);if(r.value!=null)onSignedIn(r.value)else error=r.error}
-   };loading=false
+   }
+   loading=false
   }
  }
- Surface(Modifier.fillMaxSize()){Column(Modifier.fillMaxSize().padding(28.dp),verticalArrangement=Arrangement.Center){
-  Text("TingTring",style=MaterialTheme.typography.headlineLarge);Text("Talk",style=MaterialTheme.typography.headlineMedium,color=MaterialTheme.colorScheme.primary);Text("Internet calling. No SIM. No phone number.",style=MaterialTheme.typography.bodyLarge)
-  Spacer(Modifier.height(24.dp));if(mode=="signup"){Field(username, {username=it},"Username");Spacer(Modifier.height(10.dp));Field(display,{display=it},"Display name");Spacer(Modifier.height(10.dp))}
-  Field(email,{email=it},"Email",KeyboardType.Email);if(mode!="otp"&&mode!="forgot"){Spacer(Modifier.height(10.dp));Field(password,{password=it},"Password",KeyboardType.Password,true)};if(mode=="otp"&&sent){Spacer(Modifier.height(10.dp));Field(otp,{otp=it},"6-digit code",KeyboardType.Number)}
-  error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(top=8.dp))};Spacer(Modifier.height(14.dp))
-  Button(::submit,enabled=!loading,modifier=Modifier.fillMaxWidth().height(52.dp)){if(loading)CircularProgressIndicator(Modifier.size(20.dp),color=MaterialTheme.colorScheme.onPrimary)else Text(if(mode=="otp"&&sent)"Verify code"else if(mode=="signup")"Create account"else if(mode=="otp")"Send code"else if(mode=="forgot")"Send reset email"else"Sign in")}
-  TextButton(onClick={mode=when(mode){"login"->"otp";"otp"->"forgot";"forgot"->"login";else->"login"};sent=false;error=null},modifier=Modifier.fillMaxWidth()){Text(when(mode){"login"->"Use email OTP";"otp"->"Forgot password?";"forgot"->"Back to sign in";else->"Already have an account? Sign in"})}
- }}
+
+ val title=when(mode){"signup"->"Create your account";"forgot"->"Reset your password";"otp"->if(sent)"Verify your email"else"Sign in with OTP";else->"Welcome back"}
+ val subtitle=when(mode){"signup"->"Set up your TingTring identity."; "forgot"->"We’ll send a secure reset email."; "otp"->if(sent)"Enter the 6-digit code we sent."else"Password-free sign in."; else->"Your calls. Your identity. Over the internet."}
+
+ Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){
+  BoxWithConstraints(Modifier.fillMaxSize()){
+   val compact=maxWidth<600.dp
+   Row(Modifier.fillMaxSize()){
+    if(!compact){
+     Surface(Modifier.weight(0.9f).fillMaxHeight(),color=MaterialTheme.colorScheme.primary){
+      Column(Modifier.fillMaxSize().padding(48.dp),verticalArrangement=Arrangement.Center){
+       Text("TingTring",style=MaterialTheme.typography.displaySmall,color=MaterialTheme.colorScheme.onPrimary,fontWeight=FontWeight.Bold)
+       Text("Talk",style=MaterialTheme.typography.displayMedium,color=MaterialTheme.colorScheme.onPrimary,fontWeight=FontWeight.Bold)
+       Spacer(Modifier.height(18.dp))
+       Text("Internet calling, without a SIM or traditional phone number.",style=MaterialTheme.typography.titleLarge,color=MaterialTheme.colorScheme.onPrimary.copy(alpha=.88f))
+       Spacer(Modifier.height(34.dp))
+       Card(shape=RoundedCornerShape(28.dp),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.onPrimary.copy(alpha=.10f))){
+        Column(Modifier.padding(22.dp)){Text("One simple identity",fontWeight=FontWeight.Bold,color=MaterialTheme.colorScheme.onPrimary);Text("Your unique 10-digit TingTring ID is all you need to connect.",color=MaterialTheme.colorScheme.onPrimary.copy(alpha=.86f),modifier=Modifier.padding(top=6.dp))}
+       }
+      }
+     }
+    }
+    Column(Modifier.weight(1.1f).fillMaxHeight().padding(horizontal=if(compact)24.dp else 56.dp,vertical=if(compact)28.dp else 48.dp),verticalArrangement=Arrangement.Center){
+     Text(title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
+     Text(subtitle,style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(top=6.dp,bottom=22.dp))
+
+     if(mode=="signup"){
+      VanyaCorrectionField(username,{username=it},"Username",keyboardType=KeyboardType.Text,enabled=!loading)
+      Spacer(Modifier.height(10.dp))
+      VanyaCorrectionField(display,{display=it},"Display name",keyboardType=KeyboardType.Text,enabled=!loading)
+      Spacer(Modifier.height(10.dp))
+     }
+     VanyaCorrectionField(email,{email=it},"Email",keyboardType=KeyboardType.Email,enabled=!loading)
+     if(mode!="otp"&&mode!="forgot"){
+      Spacer(Modifier.height(10.dp))
+      VanyaCorrectionField(password,{password=it},"Password",keyboardType=KeyboardType.Password,password=true,enabled=!loading)
+     }
+     if(mode=="otp"&&sent){
+      Spacer(Modifier.height(10.dp))
+      VanyaCorrectionField(otp,{otp=it},"6-digit code",keyboardType=KeyboardType.Number,enabled=!loading)
+     }
+     error?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.padding(top=10.dp))}
+     Spacer(Modifier.height(16.dp))
+     Button(onClick=::submit,enabled=!loading,modifier=Modifier.fillMaxWidth().height(54.dp),shape=RoundedCornerShape(17.dp)){
+      if(loading)CircularProgressIndicator(Modifier.size(20.dp),color=MaterialTheme.colorScheme.onPrimary)
+      else Text(when(mode){"otp"->if(sent)"Verify code"else"Send code";"signup"->"Create account";"forgot"->"Send reset email";else->"Sign in"},fontWeight=FontWeight.SemiBold)
+     }
+     TextButton(
+      onClick={mode=when(mode){"login"->"otp";"otp"->"forgot";"forgot"->"login";else->"login"};sent=false;error=null},
+      enabled=!loading,modifier=Modifier.fillMaxWidth()
+     ){
+      Text(when(mode){"login"->"Use email OTP";"otp"->"Forgot password?";"forgot"->"Back to sign in";else->"Already have an account? Sign in"})
+     }
+     if(mode=="login"){
+      TextButton(onClick={mode="signup";error=null},enabled=!loading,modifier=Modifier.fillMaxWidth()){Text("Create a new TingTring account")}
+     }
+    }
+   }
+  }
+ }
 }
-@Composable private fun Field(value:String,onChange:(String)->Unit,label:String,type:KeyboardType=KeyboardType.Text,password:Boolean=false)=OutlinedTextField(value,onChange,label={Text(label)},singleLine=true,modifier=Modifier.fillMaxWidth(),keyboardOptions=KeyboardOptions(keyboardType=type),visualTransformation=if(password)PasswordVisualTransformation()else androidx.compose.ui.text.input.VisualTransformation.None)
 
 @Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
  var selected by rememberSaveable{mutableIntStateOf(0)};Scaffold(topBar={CenterAlignedTopAppBar(title={Text("TingTring",fontWeight=FontWeight.Bold)})},bottomBar={NavigationBar{
