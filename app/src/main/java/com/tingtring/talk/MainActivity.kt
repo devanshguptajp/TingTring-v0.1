@@ -56,17 +56,32 @@ class MainActivity:ComponentActivity(){
 
 @Composable private fun App(api:ApiClient,session:SessionStore){
  var user by remember{mutableStateOf<TttUser?>(null)};var activeCall by remember{mutableStateOf<CallSession?>(null)};var checking by remember{mutableStateOf(session.accessToken!=null)}
+ var termsAccepted by rememberSaveable{mutableStateOf(api.termsAccepted())}
  LaunchedEffect(Unit){
   if(session.accessToken!=null){
-    var r=api.me()
-    if(r.value==null && session.refreshToken!=null) r=api.refreshSession()
-    user=r.value
-    if(r.value==null)session.clear()
+   var r=api.me()
+   if(r.value==null && session.refreshToken!=null) r=api.refreshSession()
+   user=r.value
+   if(r.value==null)session.clear()
   }
   checking=false
-}
+ }
  if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
+ else if(!termsAccepted)TermsDialog{api.setTermsAccepted(true);termsAccepted=true}
  else if(user==null)AuthScreen(api){user=it}else if(activeCall!=null)CallScreen(api,activeCall!!){activeCall=null}else MainShell(api,user!!,{activeCall=it}){user=null;session.clear()}
+}
+
+@Composable private fun TermsDialog(onAccept:()->Unit){
+ var checked by rememberSaveable{mutableStateOf(false)}
+ AlertDialog(onDismissRequest={},title={Text("Terms & Conditions")},text={Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)){
+  Text("Before using TingTring, review and accept these basic terms.")
+  Text("• TingTring provides internet-based calling and account services.")
+  Text("• Keep your account credentials private and do not share them.")
+  Text("• Do not harass, threaten, impersonate, or abuse other users.")
+  Text("• Call quality depends on your internet connection and supported services.")
+  Text("• Accounts may be restricted for serious violations of these rules or applicable law.")
+  Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked,{checked=it});Text("I have read and agree to the Terms & Conditions.")}
+ }},confirmButton={Button(enabled=checked,onClick=onAccept){Text("Agree & continue")}})
 }
 
 @Composable private fun AuthScreen(api:ApiClient,onSignedIn:(TttUser)->Unit){
