@@ -68,6 +68,11 @@ class ApiClient(private val baseUrl:String,private val session:SessionStore){
  suspend fun me():ApiResult<TttUser>{val r=request("GET","/api/v1/auth/me",auth=true);return if(r.value!=null)ApiResult(user(r.value.getJSONObject("user")))else ApiResult(error=r.error)}
  suspend fun resetPassword(email:String):ApiResult<Unit>{val r=request("POST","/api/v1/auth/password/reset-request",JSONObject().apply{put("email",email)});return if(r.value!=null)ApiResult(Unit)else ApiResult(error=r.error)}
  suspend fun logout():ApiResult<Unit>{val r=request("POST","/api/v1/auth/logout",auth=true);session.clear();return if(r.value!=null||r.error==null)ApiResult(Unit)else ApiResult(error=r.error)}
+ suspend fun updateProfile(username:String,displayName:String):ApiResult<TttUser>{
+  val r=request("PATCH","/api/v1/profile",JSONObject().apply{put("username",username);put("display_name",displayName)},true)
+  if(r.value==null)return ApiResult(error=r.error)
+  return ApiResult(user(r.value.getJSONObject("user")))
+ }
  suspend fun search(q:String):ApiResult<List<TttUser>>{val r=request("GET","/api/v1/directory/search?q="+URLEncoder.encode(q,"UTF-8"),auth=true);if(r.value==null)return ApiResult(error=r.error);val a=r.value.optJSONArray("results")?:JSONArray();return ApiResult((0 until a.length()).map{user(a.getJSONObject(it))})}
  suspend fun startCall(tttUserId:String, video:Boolean=false):ApiResult<CallSession>{val r=request("POST","/api/v1/calls/start",JSONObject().apply{put("ttt_user_id",tttUserId);put("call_type",if(video)"VIDEO"else"AUDIO")},true);if(r.value==null)return ApiResult(error=r.error);return ApiResult(CallSession(r.value.optString("call_id"),r.value.optString("room_name"),r.value.optString("livekit_url"),r.value.optString("token"),r.value.optString("call_type","AUDIO")))}
  suspend fun endCall(callId:String):ApiResult<Unit>{val r=request("POST","/api/v1/calls/"+callId+"/end",auth=true);return if(r.error==null)ApiResult(Unit)else ApiResult(error=r.error)}
