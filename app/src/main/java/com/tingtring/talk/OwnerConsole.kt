@@ -24,14 +24,17 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var ownerCount by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var ownerTarget by remember { mutableStateOf<TttUser?>(null) }
     var ownerConfirmStep by rememberSaveable { mutableIntStateOf(0) }
     var ownerPassword by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { ownerCount = api.ownerCount().value }
 
     Column(modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Owner Console", style = MaterialTheme.typography.headlineLarge)
         Text("Server-authorized administration", style = MaterialTheme.typography.bodyMedium)
+        ownerCount?.let { (count, limit) -> Text("Active owners: $count / $limit", style = MaterialTheme.typography.labelLarge) }
         OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Search username, email, or TingTring ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Button(enabled = query.trim().length >= 3 && !loading, onClick = {
             scope.launch {
