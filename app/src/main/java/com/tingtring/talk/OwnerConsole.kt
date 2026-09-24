@@ -49,8 +49,8 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
                     Text("Current ID: ${user.tttUserId}")
                     Text("Plan: ${user.plan}")
                     Text("Status: ${user.status}")
-                    OutlinedTextField(value = newId, onValueChange = { newId = it.lowercase() }, label = { Text("New TingTring ID") }, supportingText = { Text("3–30 lowercase letters, digits, or underscores") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Button(enabled = newId.matches(Regex("[a-z0-9_]{3,30}")) && newId != user.tttUserId && !loading, onClick = {
+                    OutlinedTextField(value = newId, onValueChange = { newId = it.lowercase() }, label = { Text("New TingTring ID") }, supportingText = { Text("Exactly 10 digits") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Button(enabled = newId.matches(Regex("\\d{10}")) && newId != user.tttUserId && !loading, onClick = {
                         scope.launch {
                             loading = true; error = null; message = null
                             val r = api.ownerChangeTttId(user.id, newId)
