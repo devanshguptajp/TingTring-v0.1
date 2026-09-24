@@ -36,6 +36,7 @@ import com.tingtring.talk.data.*
 import com.tingtring.talk.ui.theme.TingTringTheme
 import com.tingtring.talk.ui.VanyaCorrectionField
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import io.livekit.android.LiveKit
 
 private const val API_BASE_URL="http://10.0.2.2:3000"
@@ -157,10 +158,51 @@ class MainActivity:ComponentActivity(){
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
- var selected by rememberSaveable{mutableIntStateOf(0)};Scaffold(topBar={CenterAlignedTopAppBar(title={Text("TingTring",fontWeight=FontWeight.Bold)})},bottomBar={NavigationBar{
-  NavigationBarItem(selected==0,{selected=0},{Icon(Icons.Default.Home,null)},label={Text("Home")});NavigationBarItem(selected==1,{selected=1},{Icon(Icons.Default.People,null)},label={Text("Contacts")});NavigationBarItem(selected==2,{selected=2},{Icon(Icons.Default.Person,null)},label={Text("Profile")})
-  if(user.plan=="OWNER") NavigationBarItem(selected==3,{selected=3},{Icon(Icons.Default.Settings,null)},label={Text("Owner")})
- }}){p->when(selected){0->Home(user,Modifier.padding(p));1->Contacts(api,onStartCall,user.plan != "OWNER",Modifier.padding(p));2->Profile(api,user,onLogout,Modifier.padding(p));3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onLogout,Modifier.padding(p))}}
+ var selected by rememberSaveable{mutableIntStateOf(0)}
+ var incoming by remember{mutableStateOf<IncomingCall?>(null)}
+ val scope=rememberCoroutineScope()
+ LaunchedEffect(Unit){
+  while(true){
+   val r=api.incomingCalls()
+   if(incoming==null) incoming=r.value?.firstOrNull()
+   delay(2500)
+  }
+ }
+ Box(Modifier.fillMaxSize()){
+  Scaffold(topBar={CenterAlignedTopAppBar(title={Text("TingTring",fontWeight=FontWeight.Bold)})},bottomBar={NavigationBar{
+   NavigationBarItem(selected==0,{selected=0},{Icon(Icons.Default.Home,null)},label={Text("Home")})
+   NavigationBarItem(selected==1,{selected=1},{Icon(Icons.Default.People,null)},label={Text("Contacts")})
+   NavigationBarItem(selected==2,{selected=2},{Icon(Icons.Default.Person,null)},label={Text("Profile")})
+   if(user.plan=="OWNER") NavigationBarItem(selected==3,{selected=3},{Icon(Icons.Default.Settings,null)},label={Text("Owner")})
+  }}){p->when(selected){
+   0->Home(user,Modifier.padding(p))
+   1->Contacts(api,onStartCall,user.plan != "OWNER",Modifier.padding(p))
+   2->Profile(api,user,onLogout,Modifier.padding(p))
+   3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onLogout,Modifier.padding(p))
+  }}
+  incoming?.let { call ->
+   AlertDialog(
+    onDismissRequest={},
+    title={Text("Incoming TingTring call")},
+    text={Text(call.callerName + if(call.callType=="VIDEO") " is calling by video." else " is calling you.")},
+    confirmButton={TextButton(onClick={
+     scope.launch{
+      val r=api.acceptCall(call.callId)
+      api.markNotificationRead(call.notificationId)
+      incoming=null
+      r.value?.let(onStartCall)
+     }
+    }){Text("Accept")}},
+    dismissButton={TextButton(onClick={
+     scope.launch{
+      api.declineCall(call.callId)
+      api.markNotificationRead(call.notificationId)
+      incoming=null
+     }
+    }){Text("Decline")}}
+   )
+  }
+ }
 }
 @Composable private fun Home(user:TttUser,modifier:Modifier=Modifier)=Column(modifier.fillMaxSize().padding(22.dp),verticalArrangement=Arrangement.spacedBy(16.dp)){
  Text("Good to see you.",style=MaterialTheme.typography.titleMedium);Text(user.displayName,style=MaterialTheme.typography.headlineLarge)
