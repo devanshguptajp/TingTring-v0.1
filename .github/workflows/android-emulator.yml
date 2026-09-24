@@ -71,9 +71,17 @@ jobs:
             test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell am force-stop com.tingtring.talk
+            adb shell cmd package resolve-activity --brief com.tingtring.talk | grep -q 'com.tingtring.talk/.MainActivity'
+            adb shell am force-stop com.tingtring.talk
             adb shell am start -W -n com.tingtring.talk/.MainActivity
-            sleep 3
+            sleep 5
             adb shell pidof com.tingtring.talk
+            adb shell dumpsys activity activities | grep -q 'com.tingtring.talk/.MainActivity'
+            if adb logcat -d -t 400 | grep -E 'FATAL EXCEPTION|Process: com.tingtring.talk' | grep -q .; then
+              echo "Application crash detected in logcat"
+              adb logcat -d -t 400
+              exit 1
+            fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
