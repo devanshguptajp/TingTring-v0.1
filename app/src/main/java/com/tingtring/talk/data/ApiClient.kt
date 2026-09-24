@@ -57,6 +57,14 @@ class ApiClient(private val baseUrl:String,private val session:SessionStore){
   val u=r.value.optJSONObject("user")?:return ApiResult(error=r.value.optString("error","PROFILE_SETUP_REQUIRED"))
   return ApiResult(user(u))
  }
+ suspend fun refreshSession():ApiResult<TttUser>{
+  val refresh=session.refreshToken?:return ApiResult(error="NO_REFRESH_TOKEN")
+  val r=request("POST","/api/v1/auth/refresh",JSONObject().apply{put("refresh_token",refresh)})
+  if(r.value==null){session.clear();return ApiResult(error=r.error)}
+  save(r.value)
+  val u=r.value.optJSONObject("user")?:return ApiResult(error="INVALID_SESSION")
+  return ApiResult(user(u))
+ }
  suspend fun me():ApiResult<TttUser>{val r=request("GET","/api/v1/auth/me",auth=true);return if(r.value!=null)ApiResult(user(r.value.getJSONObject("user")))else ApiResult(error=r.error)}
  suspend fun resetPassword(email:String):ApiResult<Unit>{val r=request("POST","/api/v1/auth/password/reset-request",JSONObject().apply{put("email",email)});return if(r.value!=null)ApiResult(Unit)else ApiResult(error=r.error)}
  suspend fun logout():ApiResult<Unit>{val r=request("POST","/api/v1/auth/logout",auth=true);session.clear();return if(r.value!=null||r.error==null)ApiResult(Unit)else ApiResult(error=r.error)}
