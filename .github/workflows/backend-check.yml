@@ -9,9 +9,17 @@ on:
       - "render.yaml"
       - ".github/workflows/backend-check.yml"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-check-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: backend
@@ -24,8 +32,13 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Verify Node toolchain
+        run: |
+          node --version
+          npm --version
+
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Syntax check
         run: npm run check
