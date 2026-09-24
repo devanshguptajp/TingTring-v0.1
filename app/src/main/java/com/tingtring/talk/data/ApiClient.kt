@@ -240,6 +240,12 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
     }
 
+    suspend fun ownerCount(): ApiResult<Pair<Int, Int>> {
+        val r = request("GET", "/api/v1/owner/count", auth = true)
+        if (r.value == null) return ApiResult(error = r.error)
+        return ApiResult(value = r.value.optInt("owner_count", 0) to r.value.optInt("owner_limit", 5))
+    }
+
     suspend fun ownerSearchUsers(q: String): ApiResult<List<TttUser>> {
         val r = request("GET", "/api/v1/owner/users/search?q=" + URLEncoder.encode(q, "UTF-8"), auth = true)
         if (r.value == null) return ApiResult(error = r.error)
