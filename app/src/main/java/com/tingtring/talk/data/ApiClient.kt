@@ -31,10 +31,17 @@ class SessionStore(context: Context) {
     var refreshToken: String?
         get() = prefs.getString("refresh_token", null)
         set(v) { prefs.edit().putString("refresh_token", v).apply() }
+    var termsAccepted: Boolean
+        get() = prefs.getBoolean("terms_accepted_v1", false)
+        set(v) { prefs.edit().putBoolean("terms_accepted_v1", v).apply() }
     fun clear() { prefs.edit().clear().apply() }
 }
 
 class ApiClient(private val baseUrl: String, private val session: SessionStore) {
+    private val localPrefs = session
+    fun termsAccepted(): Boolean = localPrefs.termsAccepted
+    fun setTermsAccepted(value: Boolean) { localPrefs.termsAccepted = value }
+
     private suspend fun request(
         method: String,
         path: String,
