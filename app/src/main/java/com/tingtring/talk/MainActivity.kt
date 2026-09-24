@@ -260,11 +260,11 @@ class MainActivity:ComponentActivity(){
     saving=true;message=null;error=null
     scope.launch{
      val r=api.updateProfile(username,displayName)
-     if(r.value!=null)message="Profile updated." else error=r.error
+     if(r.value!=null){message="Profile updated.";username=r.value.username;displayName=r.value.displayName}else error=r.error
      saving=false
     }
    },
-   enabled=!saving && username!=user.username || !saving && displayName!=user.displayName,
+   enabled=!saving && (username.trim()!=user.username || displayName.trim()!=user.displayName),
    modifier=Modifier.fillMaxWidth().height(52.dp),
    shape=RoundedCornerShape(17.dp)
   ){if(saving)CircularProgressIndicator(Modifier.size(20.dp),color=MaterialTheme.colorScheme.onPrimary)else Text("Save changes",fontWeight=FontWeight.SemiBold)}
