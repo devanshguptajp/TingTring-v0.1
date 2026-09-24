@@ -62,7 +62,17 @@ class MainActivity:ComponentActivity(){
 
 @Composable private fun AuthScreen(api:ApiClient,onSignedIn:(TttUser)->Unit){
  var mode by rememberSaveable{mutableStateOf("login")};var email by rememberSaveable{mutableStateOf("")};var password by rememberSaveable{mutableStateOf("")};var username by rememberSaveable{mutableStateOf("")};var display by rememberSaveable{mutableStateOf("")};var otp by rememberSaveable{mutableStateOf("")};var sent by rememberSaveable{mutableStateOf(false)};var loading by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope()
- fun submit(){loading=true;error=null;scope.launch{val r=when{mode=="forgot"->{val x=api.resetPassword(email);if(x.error==null)error="Reset email requested";x};mode=="signup"->api.signup(email,password,username,display);mode=="otp"&&!sent->{val x=api.startOtp(email);if(x.error==null)sent=true;x};mode=="otp"->api.verifyOtp(email,otp);else->api.passwordLogin(email,password)};if(r.value!=null)onSignedIn(r.value);error=r.error;loading=false}}
+ fun submit(){
+  loading=true;error=null;scope.launch{
+   when{
+    mode=="forgot"->{val r=api.resetPassword(email);if(r.error==null)error=null else error=r.error}
+    mode=="signup"->{val r=api.signup(email,password,username,display);if(r.value!=null)onSignedIn(r.value)else error=r.error}
+    mode=="otp"&&!sent->{val r=api.startOtp(email);if(r.error==null)sent=true else error=r.error}
+    mode=="otp"->{val r=api.verifyOtp(email,otp);if(r.value!=null)onSignedIn(r.value)else error=r.error}
+    else->{val r=api.passwordLogin(email,password);if(r.value!=null)onSignedIn(r.value)else error=r.error}
+   };loading=false
+  }
+ }
  Surface(Modifier.fillMaxSize()){Column(Modifier.fillMaxSize().padding(28.dp),verticalArrangement=Arrangement.Center){
   Text("TingTring",style=MaterialTheme.typography.headlineLarge);Text("Talk",style=MaterialTheme.typography.headlineMedium,color=MaterialTheme.colorScheme.primary);Text("Internet calling. No SIM. No phone number.",style=MaterialTheme.typography.bodyLarge)
   Spacer(Modifier.height(24.dp));if(mode=="signup"){Field(username, {username=it},"Username");Spacer(Modifier.height(10.dp));Field(display,{display=it},"Display name");Spacer(Modifier.height(10.dp))}
@@ -75,7 +85,7 @@ class MainActivity:ComponentActivity(){
 @Composable private fun Field(value:String,onChange:(String)->Unit,label:String,type:KeyboardType=KeyboardType.Text,password:Boolean=false)=OutlinedTextField(value,onChange,label={Text(label)},singleLine=true,modifier=Modifier.fillMaxWidth(),keyboardOptions=KeyboardOptions(keyboardType=type),visualTransformation=if(password)PasswordVisualTransformation()else androidx.compose.ui.text.input.VisualTransformation.None)
 
 @Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
- var selected by rememberSaveable{mutableIntStateOf(0)};Scaffold(bottomBar={NavigationBar{
+ var selected by rememberSaveable{mutableIntStateOf(0)};Scaffold(topBar={CenterAlignedTopAppBar(title={Text("TingTring",fontWeight=FontWeight.Bold)})},bottomBar={NavigationBar{
   NavigationBarItem(selected==0,{selected=0},{Icon(Icons.Default.Home,null)},label={Text("Home")});NavigationBarItem(selected==1,{selected=1},{Icon(Icons.Default.People,null)},label={Text("Contacts")});NavigationBarItem(selected==2,{selected=2},{Icon(Icons.Default.Person,null)},label={Text("Profile")})
   if(user.plan=="OWNER") NavigationBarItem(selected==3,{selected=3},{Icon(Icons.Default.Settings,null)},label={Text("Owner")})
  }}){p->when(selected){0->Home(user,Modifier.padding(p));1->Contacts(api,onStartCall,user.plan != "OWNER",Modifier.padding(p));2->Profile(api,user,onLogout,Modifier.padding(p));3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onLogout,Modifier.padding(p))}}
