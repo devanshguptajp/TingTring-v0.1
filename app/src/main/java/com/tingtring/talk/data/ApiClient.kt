@@ -21,6 +21,7 @@ data class TttUser(
 data class Contact(val id: String, val user: TttUser)
 data class CallSession(val callId: String, val roomName: String, val livekitUrl: String, val token: String, val callType: String)
 data class ApiResult<T>(val value: T? = null, val error: String? = null)
+data class IncomingCall(val notificationId: String, val callId: String, val callerName: String, val callType: String)
 
 class SessionStore(context: Context) {
     private val prefs = context.getSharedPreferences("ttt_session", Context.MODE_PRIVATE)
@@ -192,6 +193,23 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
 
     suspend fun endCall(callId: String): ApiResult<Unit> {
         val r = request("POST", "/api/v1/calls/$callId/end", auth = true)
+        return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
+    }
+
+    suspend fun incomingCalls(): ApiResult<List<IncomingCall>> {
+        val r = request("GET", "/api/v1/notifications/incoming-calls", auth = true)
+        if (r.value == null) return ApiResult(error = r.error)
+        val a = r.value.optJSONArray("notifications") ?: JSONArray()
+        return ApiResult(value = (0 until a.length()).mapNotNull { i ->
+            val n = a.optJSONObject(i) ?: return@mapNotNull null
+            val d = n.optJSONObject("data") ?: return@mapNotNull null
+            val callId = d.optString("call_id").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            IncomingCall(n.optString("id"), callId, n.optString("body", "TingTring user"), d.optString("call_type", "AUDIO"))
+        })
+    }
+
+    suspend fun markNotificationRead(notificationId: String): ApiResult<Unit> {
+        val r = request("POST", "/api/v1/notifications/$notificationId/read", auth = true)
         return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
     }
 
