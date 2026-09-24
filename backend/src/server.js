@@ -252,10 +252,6 @@ app.post("/api/v1/owner/users/:userId/grant", requireSupabase, requireUser, requ
     if (req.body?.confirmation_count !== 10) return res.status(400).json({ error: "CONFIRMATIONS_REQUIRED" });
     if (targetId === req.authUser.id) return res.status(400).json({ error: "ALREADY_OWNER" });
 
-    const { count, error: countError } = await supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "OWNER");
-    if (countError) throw countError;
-    if ((count || 0) >= 5) return res.status(409).json({ error: "OWNER_LIMIT_REACHED" });
-
     const { data: target, error: targetError } = await supabaseAdmin.from("profiles").select("id,username,display_name,plan,status").eq("id", targetId).maybeSingle();
     if (targetError) throw targetError;
     if (!target || target.status !== "ACTIVE") return res.status(404).json({ error: "USER_NOT_FOUND" });
@@ -268,8 +264,9 @@ app.post("/api/v1/owner/users/:userId/grant", requireSupabase, requireUser, requ
     const { data: authCheck, error: authError } = await supabaseAdmin.auth.signInWithPassword({ email: actorProfile.email, password });
     if (authError || !authCheck?.user) return res.status(401).json({ error: "PASSWORD_REAUTH_FAILED" });
 
-    const { error: updateError } = await supabaseAdmin.from("profiles").update({ plan: "OWNER" }).eq("id", targetId).eq("plan", "FREE");
+    const { data: granted, error: updateError } = await supabaseAdmin.rpc("grant_owner_role", { target_user_id: targetId });
     if (updateError) throw updateError;
+    if (!granted) return res.status(409).json({ error: "OWNER_LIMIT_REACHED_OR_USER_UNAVAILABLE" });
     await supabaseAdmin.from("audit_logs").insert({
       actor_user_id: req.authUser.id,
       action: "OWNER_GRANTED",
