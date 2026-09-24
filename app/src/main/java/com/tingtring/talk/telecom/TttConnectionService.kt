@@ -43,7 +43,7 @@ class TttConnectionService : ConnectionService() {
         val displayName = request.extras?.getString("display_name")
             ?.takeIf { it.isNotBlank() }
             ?: "TingTring"
-        connection.setCallerDisplayName(displayName, TelecomLogPrivacy.PRIORITY_NORMAL)
+        connection.setCallerDisplayName(displayName, Connection.PRESENTATION_ALLOWED)
         return connection
     }
 
