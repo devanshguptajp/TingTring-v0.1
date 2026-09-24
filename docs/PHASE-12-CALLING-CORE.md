@@ -11,6 +11,8 @@ Implemented:
 - Authenticated participant-only call-end API.
 - Caller/callee database participant records.
 - Incoming-call notification record creation.
+- Authenticated incoming-call notification polling and in-app accept/decline UI.
+- Hardened call state transitions against repeated/racing accept/decline/end requests.
 - Android microphone permission request and runtime handling.
 - Android LiveKit room connect/disconnect lifecycle.
 - Microphone publish and mute/unmute.
