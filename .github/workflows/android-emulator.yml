@@ -43,7 +43,7 @@ jobs:
           gradle --version
 
       - name: Build debug APK
-        run: gradle --no-daemon --stacktrace --warning-mode=all :app:assembleDebug
+        run: gradle --no-daemon --refresh-dependencies --stacktrace --warning-mode=all :app:assembleDebug
 
       - name: Verify APK exists
         run: |
