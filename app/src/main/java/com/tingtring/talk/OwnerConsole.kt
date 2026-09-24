@@ -9,6 +9,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.tingtring.talk.data.ApiClient
 import com.tingtring.talk.data.TttUser
 import kotlinx.coroutines.launch
@@ -22,6 +24,9 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+    var ownerTarget by remember { mutableStateOf<TttUser?>(null) }
+    var ownerConfirmStep by rememberSaveable { mutableIntStateOf(0) }
+    var ownerPassword by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     Column(modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -50,6 +55,7 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
                     Text("Plan: ${user.plan}")
                     Text("Status: ${user.status}")
                     OutlinedTextField(value = newId, onValueChange = { newId = it.lowercase() }, label = { Text("New TingTring ID") }, supportingText = { Text("Exactly 10 digits") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedButton(onClick={ownerTarget=user;ownerConfirmStep=1;ownerPassword=""},enabled=user.plan!="OWNER"&&!loading){Text("Grant Owner access")}
                     Button(enabled = newId.matches(Regex("\\d{10}")) && newId != user.tttUserId && !loading, onClick = {
                         scope.launch {
                             loading = true; error = null; message = null
@@ -67,6 +73,16 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
             }
         }
 
+        ownerTarget?.let { target ->
+            AlertDialog(onDismissRequest={ownerTarget=null;ownerConfirmStep=0;ownerPassword=""},title={Text("Grant Owner access")},
+                text={if(ownerConfirmStep<10) Text("Confirmation " + ownerConfirmStep + " of 10. You are explicitly authorizing Owner access.") else Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
+                    Text("Final step: enter your current account password.")
+                    Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){repeat(8){index->OutlinedTextField(value=ownerPassword.getOrNull(index)?.toString()?:"",onValueChange={v->val d=v.filter{it.isDigit()}.takeLast(1);val chars=ownerPassword.toMutableList();while(chars.size<=index)chars.add(" "[0]);if(d.isNotEmpty())chars[index]=d[0];ownerPassword=chars.joinToString("").trimEnd()},modifier=Modifier.width(42.dp),singleLine=true,visualTransformation=PasswordVisualTransformation(),keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=KeyboardType.Number))}}
+                    Text("The password is verified server-side and is not stored.")
+                }},
+                confirmButton={Button(enabled=!loading&&(ownerConfirmStep<10||ownerPassword.isNotBlank()),onClick={if(ownerConfirmStep<10)ownerConfirmStep++ else scope.launch{loading=true;val r=api.grantOwner(target.id,ownerPassword);if(r.error==null){message="Owner access granted.";selected=target.copy(plan="OWNER");results=results.map{if(it.id==target.id)it.copy(plan="OWNER")else it};ownerTarget=null;ownerConfirmStep=0;ownerPassword=""}else error=r.error;loading=false}}){Text(if(ownerConfirmStep<10)"I confirm" else "Grant Owner")}},
+                dismissButton={TextButton(onClick={ownerTarget=null;ownerConfirmStep=0;ownerPassword=""}){Text("Cancel")}})
+        }
         Text("Results", style = MaterialTheme.typography.titleLarge)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(results) { user ->
