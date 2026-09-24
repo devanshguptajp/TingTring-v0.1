@@ -16,3 +16,14 @@ Repository implementation additions: owner console ID management UI.\n\nRemainin
 - Point the Android client at the deployed backend instead of the emulator localhost address.
 - Configure Supabase Auth/email in the real project.
 - Run real signup/login/OTP/reset flows against deployed services.
+
+
+## Latest repository pass
+- Material 3 visual system polished with consistent TingTring blue, surfaces, typography, cards, navigation, and states.
+- Home dashboard upgraded with identity card, plan/status cards, calling guidance, and privacy indicator.
+- Contacts UI upgraded with search results, saved-contact empty state, avatars/initials, call controls, and clearer hierarchy.
+- Profile UI upgraded with account/security cards and structured account details.
+- Auth flow hardened so signup, password login, OTP, and reset states are handled independently without mixed-result type assumptions.
+- Main navigation now has a consistent top app bar.
+- Owner Console remains owner-gated and server-authorized.
+- Live Supabase/Auth/LiveKit verification remains an external dependency.
