@@ -8,8 +8,10 @@ Implemented:
 - Self-call/self-contact safeguards.
 - Active-account filtering.
 - Server-side authorization through the authenticated backend.
-- Android search and contacts UI.
-- Flexible TTT identity remains distinct from phone numbers; generated IDs use 3 lowercase letters plus 8 digits, while owner-assigned IDs may use any valid 3–30 character lowercase ID.
+- Android search and contacts UI with animated Vanya fields.
+- Profile editing for username/display name with server-side uniqueness validation.
+- Profile identity card clearly separates the permanent 10-digit TTT ID from editable username/display name.
+- TTT identity remains distinct from phone numbers; every TTT User ID is exactly 10 digits and is globally unique. Old IDs remain reserved when an owner changes an ID.
 - Database indexes for TTT ID and contact lookup.
 
 Repository implementation additions: flexible IDs and old-ID aliases.\n\nRemaining external verification:
