@@ -1,7 +1,7 @@
 -- Phase 6 RLS regression assertions.
 -- Run with Supabase CLI: supabase test db
 begin;
-select plan(8);
+select plan(10);
 
 select ok(
   (select relrowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace
@@ -41,6 +41,19 @@ select ok(
          where n.nspname='public' and r.relname='profiles'
            and pg_get_constraintdef(c.oid) like '%ttt_user_id%10%'),
   'TTT ID format constraint exists'
+);
+
+
+select ok(
+  (select relrowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relname='identity_reservations'),
+  'identity reservations has RLS enabled'
+);
+select ok(
+  exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+         where n.nspname='public' and p.proname='generate_ttt_user_id'
+           and pg_get_functiondef(p.oid) like '%identity_reservations%'),
+  'TTT ID generator excludes reserved identities'
 );
 
 select * from finish();
