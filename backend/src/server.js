@@ -26,7 +26,29 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseConfigured = Boolean(supabaseUrl && supabaseServiceRoleKey);
 const supabaseAdmin = supabaseConfigured ? createAuthClient(supabaseUrl, supabaseServiceRoleKey) : null;
 
-async function requireOwner(req, res, next) {\n  const profile = await getProfile(supabaseAdmin, req.authUser.id);\n  if (!profile || profile.plan !== "OWNER") return res.status(403).json({ error: "OWNER_ONLY" });\n  req.ownerProfile = profile;\n  next();\n}\n\nfunction validTttUserId(value) { return typeof value === "string" && /^[a-z0-9_]{3,30}$/.test(value); }\n\nasync function resolveTttUserId(value) {\n  const normalized = value.trim().toLowerCase();\n  const direct = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("ttt_user_id", normalized).eq("status", "ACTIVE").maybeSingle();\n  if (direct.error) throw direct.error;\n  if (direct.data) return direct.data;\n  const alias = await supabaseAdmin.from("identity_reservations").select("reserved_for_user_id").eq("ttt_user_id", normalized).maybeSingle();\n  if (alias.error) throw alias.error;\n  if (!alias.data?.reserved_for_user_id) return null;\n  const current = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("id", alias.data.reserved_for_user_id).eq("status", "ACTIVE").maybeSingle();\n  if (current.error) throw current.error;\n  return current.data || null;\n}\n\nfunction requireSupabase(req, res, next) {
+async function requireOwner(req, res, next) {
+  const profile = await getProfile(supabaseAdmin, req.authUser.id);
+  if (!profile || profile.plan !== "OWNER") return res.status(403).json({ error: "OWNER_ONLY" });
+  req.ownerProfile = profile;
+  next();
+}
+
+function validTttUserId(value) { return typeof value === "string" && /^[a-z0-9_]{3,30}$/.test(value); }
+
+async function resolveTttUserId(value) {
+  const normalized = value.trim().toLowerCase();
+  const direct = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("ttt_user_id", normalized).eq("status", "ACTIVE").maybeSingle();
+  if (direct.error) throw direct.error;
+  if (direct.data) return direct.data;
+  const alias = await supabaseAdmin.from("identity_reservations").select("reserved_for_user_id").eq("ttt_user_id", normalized).maybeSingle();
+  if (alias.error) throw alias.error;
+  if (!alias.data?.reserved_for_user_id) return null;
+  const current = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("id", alias.data.reserved_for_user_id).eq("status", "ACTIVE").maybeSingle();
+  if (current.error) throw current.error;
+  return current.data || null;
+}
+
+function requireSupabase(req, res, next) {
   if (!supabaseAdmin) return res.status(503).json({ error: "SUPABASE_NOT_CONFIGURED" });
   next();
 }
@@ -246,9 +268,7 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
     const targetId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim() : "";
     const callType = req.body?.call_type === "VIDEO" ? "VIDEO" : "AUDIO";
     if (!validTttUserId(targetId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
-    const { data: target, error: targetError } = await supabaseAdmin.from("profiles")
-      .select("id,ttt_user_id,username,display_name,status").eq("ttt_user_id", targetId).eq("status", "ACTIVE").maybeSingle();
-    if (targetError) throw targetError;
+    const target = await resolveTttUserId(targetId);
     if (!target) return res.status(404).json({ error: "USER_NOT_FOUND" });
     if (target.id === req.authUser.id) return res.status(400).json({ error: "CANNOT_CALL_SELF" });
     const roomName = "ttt_" + randomUUID();
@@ -376,12 +396,9 @@ app.get("/api/v1/contacts", requireSupabase, requireUser, async (req, res) => {
 
 app.post("/api/v1/contacts", requireSupabase, requireUser, async (req, res) => {
   try {
-    const tttUserId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim() : "";
-    if (!/^\d{10}$/.test(tttUserId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
-    const { data: contact, error: lookupError } = await supabaseAdmin.from("profiles")
-      .select("id,ttt_user_id,username,display_name,plan,avatar_url,status,created_at,updated_at,last_seen_at")
-      .eq("ttt_user_id", tttUserId).eq("status", "ACTIVE").maybeSingle();
-    if (lookupError) throw lookupError;
+    const tttUserId = typeof req.body?.ttt_user_id === "string" ? req.body.ttt_user_id.trim().toLowerCase() : "";
+    if (!validTttUserId(tttUserId)) return res.status(400).json({ error: "INVALID_TTT_USER_ID" });
+    const contact = await resolveTttUserId(tttUserId);
     if (!contact) return res.status(404).json({ error: "USER_NOT_FOUND" });
     if (contact.id === req.authUser.id) return res.status(400).json({ error: "CANNOT_ADD_SELF" });
     const { data, error } = await supabaseAdmin.from("contacts")
