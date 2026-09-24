@@ -382,6 +382,35 @@ app.get("/api/v1/directory/search", requireSupabase, requireUser, async (req, re
   }
 });
 
+app.get("/api/v1/notifications/incoming-calls", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin.from("notifications")
+      .select("id,title,body,data,created_at")
+      .eq("user_id", req.authUser.id)
+      .eq("kind", "INCOMING_CALL")
+      .is("read_at", null)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    res.status(200).json({ notifications: data || [] });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "INCOMING_CALL_LOOKUP_FAILED" });
+  }
+});
+
+app.post("/api/v1/notifications/:notificationId/read", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin.from("notifications").update({ read_at: new Date().toISOString() })
+      .eq("id", req.params.notificationId).eq("user_id", req.authUser.id);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "NOTIFICATION_READ_FAILED" });
+  }
+});
+
 app.get("/api/v1/contacts", requireSupabase, requireUser, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin.from("contacts")
