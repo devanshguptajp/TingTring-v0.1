@@ -240,6 +240,14 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return ApiResult(value = (0 until a.length()).map { user(a.getJSONObject(it)) })
     }
 
+    suspend fun grantOwner(userId: String, password: String): ApiResult<Unit> {
+        val r = request("POST", "/api/v1/owner/users/$userId/grant", JSONObject().apply {
+            put("password", password)
+            put("confirmation_count", 10)
+        }, auth = true)
+        return if (r.value != null) ApiResult(Unit) else ApiResult(error = r.error)
+    }
+
     suspend fun ownerChangeTttId(userId: String, newId: String): ApiResult<Pair<String, String>> {
         val r = request("POST", "/api/v1/owner/users/$userId/ttt-id", JSONObject().apply {
             put("ttt_user_id", newId)
