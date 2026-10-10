@@ -85,7 +85,13 @@ class MainActivity:ComponentActivity(){
   }
   checking=false
  }
- if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
+ LaunchedEffect(user?.id) {
+  if (user != null) {
+   val token = session.pushToken
+   if (!token.isNullOrBlank()) api.registerPushToken(token)
+  }
+ }
+ \n if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
  else if(!termsAccepted)TermsDialog{api.setTermsAccepted(true);termsAccepted=true}
  else if(user==null)AuthScreen(api){user=it}else if(activeCall!=null)CallScreen(api,activeCall!!){activeCall=null}else MainShell(api,user!!,{activeCall=it}){user=null;session.clear()}
 }
