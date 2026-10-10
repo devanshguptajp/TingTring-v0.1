@@ -331,6 +331,58 @@ app.post("/api/v1/devices/push-token", requireSupabase, requireUser, async (req,
   }
 });
 
+app.post("/api/v1/calls/group", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const livekitKey = process.env.LIVEKIT_API_KEY;
+    const livekitSecret = process.env.LIVEKIT_API_SECRET;
+    if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
+    const rawIds = req.body?.ttt_user_ids;
+    if (!Array.isArray(rawIds) || rawIds.length < 2 || rawIds.length > 7 ||
+        rawIds.some(id => !validTttUserId(id)) || new Set(rawIds).size !== rawIds.length) {
+      return res.status(400).json({ error: "INVALID_GROUP_PARTICIPANTS", max_participants: 8 });
+    }
+    const targets = [];
+    for (const id of rawIds) {
+      const target = await resolveTttUserId(id);
+      if (!target || target.status !== "ACTIVE") return res.status(404).json({ error: "GROUP_PARTICIPANT_NOT_FOUND" });
+      if (target.id === req.authUser.id || targets.some(existing => existing.id === target.id)) {
+        return res.status(400).json({ error: "INVALID_GROUP_PARTICIPANTS" });
+      }
+      targets.push(target);
+    }
+    const roomName = "ttt_group_" + randomUUID();
+    const { data: call, error: callError } = await supabaseAdmin.from("calls")
+      .insert({ created_by: req.authUser.id, call_type: "GROUP", status: "RINGING", livekit_room_name: roomName })
+      .select("id,call_type,status,livekit_room_name,created_at").single();
+    if (callError) throw callError;
+    const now = new Date().toISOString();
+    const participants = [
+      { call_id: call.id, user_id: req.authUser.id, role: "CALLER", status: "ACCEPTED", joined_at: now },
+      ...targets.map(target => ({ call_id: call.id, user_id: target.id, role: "PARTICIPANT", status: "RINGING" }))
+    ];
+    const { error: participantError } = await supabaseAdmin.from("call_participants").insert(participants);
+    if (participantError) {
+      await supabaseAdmin.from("calls").delete().eq("id", call.id);
+      throw participantError;
+    }
+    const callerName = req.authUser.user_metadata?.display_name || "TingTring user";
+    const { error: notificationError } = await supabaseAdmin.from("notifications").insert(
+      targets.map(target => ({
+        user_id: target.id, kind: "INCOMING_CALL", title: "Incoming TingTring group call",
+        body: callerName, data: { call_id: call.id, call_type: "GROUP", room_name: roomName }
+      }))
+    );
+    if (notificationError) throw notificationError;
+    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
+    token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
+    res.status(201).json({ call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(), call_type: "GROUP" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "GROUP_CALL_START_FAILED" });
+  }
+});
+
 app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) => {
   try {
     const livekitUrl = process.env.LIVEKIT_URL;
@@ -379,18 +431,27 @@ app.post("/api/v1/calls/:callId/accept", requireSupabase, requireUser, async (re
     const livekitSecret = process.env.LIVEKIT_API_SECRET;
     if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
     const { data: participant, error: lookupError } = await supabaseAdmin.from("call_participants")
-      .select("call_id,call:call_id(id,created_by,call_type,status,livekit_room_name)")
-      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("role", "CALLEE").maybeSingle();
+      .select("call_id,role,call:call_id(id,created_by,call_type,status,livekit_room_name)")
+      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).in("role", ["CALLEE", "PARTICIPANT"]).maybeSingle();
     if (lookupError) throw lookupError;
     if (!participant?.call) return res.status(404).json({ error: "CALL_NOT_FOUND" });
-    if (participant.call.status !== "RINGING") return res.status(409).json({ error: "CALL_NOT_RINGING" });
-    const { data: acceptedCall, error: callError } = await supabaseAdmin.from("calls")
-      .update({ status: "ACCEPTED", connected_at: new Date().toISOString(), started_at: new Date().toISOString() })
-      .eq("id", req.params.callId).eq("status", "RINGING")
-      .select("id").maybeSingle();
-    if (callError) throw callError;
-    if (!acceptedCall) return res.status(409).json({ error: "CALL_NOT_RINGING" });
-    const { error: participantError } = await supabaseAdmin.from("call_participants").update({ status: "ACCEPTED", joined_at: new Date().toISOString() }).eq("call_id", req.params.callId).eq("user_id", req.authUser.id);
+    if (!["RINGING", "ACCEPTED"].includes(participant.call.status)) return res.status(409).json({ error: "CALL_NOT_RINGING" });
+    if (participant.call.status === "RINGING") {
+      const { data: acceptedCall, error: callError } = await supabaseAdmin.from("calls")
+        .update({ status: "ACCEPTED", connected_at: new Date().toISOString(), started_at: new Date().toISOString() })
+        .eq("id", req.params.callId).eq("status", "RINGING")
+        .select("id").maybeSingle();
+      if (callError) throw callError;
+      if (!acceptedCall) {
+        const { data: latestCall, error: latestError } = await supabaseAdmin.from("calls")
+          .select("status").eq("id", req.params.callId).maybeSingle();
+        if (latestError) throw latestError;
+        if (latestCall?.status !== "ACCEPTED") return res.status(409).json({ error: "CALL_NOT_RINGING" });
+      }
+    }
+    const { error: participantError } = await supabaseAdmin.from("call_participants")
+      .update({ status: "ACCEPTED", joined_at: new Date().toISOString() })
+      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("status", "RINGING");
     if (participantError) throw participantError;
     const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
     token.addGrant({ roomJoin: true, room: participant.call.livekit_room_name, canPublish: true, canSubscribe: true });
