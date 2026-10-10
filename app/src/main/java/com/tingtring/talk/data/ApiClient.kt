@@ -36,7 +36,8 @@ data class CallParticipant(val user: TttUser, val role: String, val status: Stri
 data class ApiResult<T>(val value: T? = null, val error: String? = null)
 data class OwnerDashboard(
     val users: List<TttUser>, val total: Int, val active: Int, val suspended: Int,
-    val free: Int, val pro: Int, val premium: Int, val owners: Int
+    val free: Int, val pro: Int, val premium: Int, val owners: Int,
+    val page: Int, val pageSize: Int, val totalRecords: Int, val hasMore: Boolean
 )
 data class IncomingCall(val notificationId: String, val callId: String, val callerName: String, val callType: String)
 
@@ -343,8 +344,8 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return me()
     }
 
-    suspend fun ownerDashboard(): ApiResult<OwnerDashboard> {
-        val r = request("GET", "/api/v1/owner/dashboard", auth = true)
+    suspend fun ownerDashboard(page: Int = 1, pageSize: Int = 50): ApiResult<OwnerDashboard> {
+        val r = request("GET", "/api/v1/owner/dashboard?page=$page&page_size=$pageSize", auth = true)
         if (r.value == null) return ApiResult(error = r.error)
         val counts = r.value.optJSONObject("counts") ?: JSONObject()
         val a = r.value.optJSONArray("users") ?: JSONArray()
@@ -352,7 +353,10 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
             users = (0 until a.length()).map { user(a.getJSONObject(it)) },
             total = counts.optInt("total"), active = counts.optInt("active"),
             suspended = counts.optInt("suspended"), free = counts.optInt("free"),
-            pro = counts.optInt("pro"), premium = counts.optInt("premium"), owners = counts.optInt("owners")
+            pro = counts.optInt("pro"), premium = counts.optInt("premium"), owners = counts.optInt("owners"),
+            page = r.value.optInt("page", page), pageSize = r.value.optInt("page_size", pageSize),
+            totalRecords = r.value.optInt("total_records", counts.optInt("total")),
+            hasMore = r.value.optBoolean("has_more", false)
         ))
     }
 
