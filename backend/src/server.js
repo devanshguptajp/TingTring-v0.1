@@ -138,7 +138,7 @@ app.post("/api/v1/owner/bootstrap", requireSupabase, requireUser, async (req, re
       .select("id", { count: "exact", head: true }).eq("plan", "OWNER");
     if (countError) throw countError;
     if ((count || 0) > 0) return res.status(409).json({ error: "OWNER_ALREADY_INITIALIZED" });
-    const { data: granted, error: grantError } = await supabaseAdmin.rpc("grant_owner_role", { target_user_id: req.authUser.id });
+    const { data: granted, error: grantError } = await supabaseAdmin.rpc("bootstrap_initial_owner", { target_user_id: req.authUser.id });
     if (grantError) throw grantError;
     if (!granted) return res.status(409).json({ error: "OWNER_BOOTSTRAP_FAILED" });
     await supabaseAdmin.from("audit_logs").insert({
