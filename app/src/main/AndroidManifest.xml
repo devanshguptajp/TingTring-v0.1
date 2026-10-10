@@ -6,11 +6,15 @@
  <uses-permission android:name="android.permission.RECORD_AUDIO"/>
  <uses-permission android:name="android.permission.CAMERA"/>
  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+ <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
  <application android:allowBackup="false" android:label="TingTring Talk" android:supportsRtl="true" android:theme="@style/Theme.TingTringTalk">
   <activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
  
  <service android:name=".telecom.TttConnectionService" android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE" android:exported="true" android:label="TingTring Talk">
   <intent-filter><action android:name="android.telecom.ConnectionService"/></intent-filter>
  </service>
+  <service android:name=".push.TttFirebaseMessagingService" android:exported="false">
+   <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter>
+  </service>
  </application>
 </manifest>
