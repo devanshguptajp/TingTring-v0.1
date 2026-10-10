@@ -4,7 +4,8 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { callEntitlement, groupParticipantLimit, planEntitlement, isOverrideOwner } from "./entitlements.js";
 import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import {
@@ -49,6 +50,99 @@ async function resolveTttUserId(value) {
   const current = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("id", alias.data.reserved_for_user_id).eq("status", "ACTIVE").maybeSingle();
   if (current.error) throw current.error;
   return current.data || null;
+}
+
+function entitlementPayload(entitlement, call) {
+  const startedAt = call?.started_at ? Date.parse(call.started_at) : NaN;
+  const elapsedSeconds = Number.isFinite(startedAt) ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
+  return {
+    effective_plan: entitlement.effectivePlan,
+    max_duration_seconds: entitlement.maxDurationSeconds,
+    max_participants: entitlement.maxParticipants,
+    owner_override: entitlement.ownerOverride,
+    features: entitlement.features,
+    call_status: call?.status || "UNKNOWN",
+    elapsed_seconds: elapsedSeconds
+  };
+}
+
+async function loadCallEntitlement(callId, userId) {
+  const { data: call, error: callError } = await supabaseAdmin.from("calls")
+    .select("id,created_by,call_type,status,started_at,livekit_room_name,duration_limit_seconds,effective_plan,owner_override_active")
+    .eq("id", callId).maybeSingle();
+  if (callError) throw callError;
+  if (!call) return { error: "CALL_NOT_FOUND" };
+  const { data: membership, error: membershipError } = await supabaseAdmin.from("call_participants")
+    .select("id").eq("call_id", callId).eq("user_id", userId).maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership) return { error: "CALL_NOT_FOUND" };
+  const callerProfile = await getProfile(supabaseAdmin, call.created_by);
+  if (!callerProfile) return { error: "CALL_NOT_FOUND" };
+  const { data: rows, error: participantsError } = await supabaseAdmin.from("call_participants")
+    .select("user_id,role,status,user:user_id(id,username,plan)")
+    .eq("call_id", callId);
+  if (participantsError) throw participantsError;
+  const activeProfiles = (rows || []).filter(row => row.status === "ACCEPTED" && row.user).map(row => row.user);
+  const entitlement = callEntitlement(callerProfile, activeProfiles);
+  if (call.owner_override_active !== entitlement.ownerOverride || call.effective_plan !== entitlement.effectivePlan) {
+    const { error: updateError } = await supabaseAdmin.from("calls").update({
+      owner_override_active: entitlement.ownerOverride, effective_plan: entitlement.effectivePlan
+    }).eq("id", callId).in("status", ["RINGING", "ACCEPTED"]);
+    if (updateError) throw updateError;
+  }
+  return { call, callerProfile, activeProfiles, entitlement };
+}
+
+async function enforceCallDurationLimits() {
+  if (!supabaseAdmin) return;
+  const { data: calls, error } = await supabaseAdmin.from("calls")
+    .select("id,created_by,call_type,status,started_at,livekit_room_name,duration_limit_seconds,owner_override_active")
+    .eq("status", "ACCEPTED").not("started_at", "is", null).limit(100);
+  if (error) throw error;
+  for (const call of calls || []) {
+    const { data: rows, error: participantsError } = await supabaseAdmin.from("call_participants")
+      .select("user_id,status,user:user_id(id,username,plan)")
+      .eq("call_id", call.id);
+    if (participantsError) throw participantsError;
+    const activeProfiles = (rows || []).filter(row => row.status === "ACCEPTED" && row.user).map(row => row.user);
+    const creator = await getProfile(supabaseAdmin, call.created_by);
+    if (!creator) continue;
+    const entitlement = callEntitlement(creator, activeProfiles);
+    if (entitlement.ownerOverride) {
+      if (!call.owner_override_active) {
+        await supabaseAdmin.from("calls").update({ owner_override_active: true, effective_plan: "OWNER" })
+          .eq("id", call.id).eq("status", "ACCEPTED");
+      }
+      continue;
+    }
+    if (call.owner_override_active) {
+      await supabaseAdmin.from("calls").update({ owner_override_active: false, effective_plan: creator.plan })
+        .eq("id", call.id).eq("status", "ACCEPTED");
+    }
+    const limitSeconds = call.duration_limit_seconds ?? planEntitlement(creator.plan).maxDurationSeconds;
+    if (limitSeconds == null) continue;
+    const startedAt = Date.parse(call.started_at || "");
+    if (!Number.isFinite(startedAt) || (Date.now() - startedAt) / 1000 < limitSeconds) continue;
+    const { data: ended, error: endError } = await supabaseAdmin.from("calls")
+      .update({ status: "ENDED", ended_at: new Date().toISOString(), ended_reason: "PLAN_DURATION_LIMIT" })
+      .eq("id", call.id).eq("status", "ACCEPTED").select("id").maybeSingle();
+    if (endError) throw endError;
+    if (!ended) continue;
+    const livekitUrl = process.env.LIVEKIT_URL;
+    const livekitKey = process.env.LIVEKIT_API_KEY;
+    const livekitSecret = process.env.LIVEKIT_API_SECRET;
+    if (livekitUrl && livekitKey && livekitSecret && call.livekit_room_name) {
+      try {
+        await new RoomServiceClient(livekitUrl, livekitKey, livekitSecret).deleteRoom(call.livekit_room_name);
+      } catch (roomError) {
+        console.error("Could not close LiveKit room after plan limit:", roomError?.message || roomError);
+      }
+    }
+    const { error: participantEndError } = await supabaseAdmin.from("call_participants")
+      .update({ status: "ENDED", left_at: new Date().toISOString() })
+      .eq("call_id", call.id).eq("status", "ACCEPTED");
+    if (participantEndError) console.error("Could not close call participant records:", participantEndError.message);
+  }
 }
 
 let firebaseMessaging = undefined;
@@ -498,10 +592,12 @@ app.post("/api/v1/calls/group", requireSupabase, requireUser, async (req, res) =
     const livekitSecret = process.env.LIVEKIT_API_SECRET;
     if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
     const rawIds = req.body?.ttt_user_ids;
-    if (!Array.isArray(rawIds) || rawIds.length < 2 || rawIds.length > 7 ||
+    if (!Array.isArray(rawIds) || rawIds.length < 2 || rawIds.length > 24 ||
         rawIds.some(id => !validTttUserId(id)) || new Set(rawIds).size !== rawIds.length) {
-      return res.status(400).json({ error: "INVALID_GROUP_PARTICIPANTS", max_participants: 8 });
+      return res.status(400).json({ error: "INVALID_GROUP_PARTICIPANTS", max_participants: 25 });
     }
+    const callerProfile = await getProfile(supabaseAdmin, req.authUser.id);
+    if (!callerProfile || callerProfile.status !== "ACTIVE") return res.status(403).json({ error: "ACCOUNT_UNAVAILABLE" });
     const targets = [];
     for (const id of rawIds) {
       const target = await resolveTttUserId(id);
@@ -511,10 +607,19 @@ app.post("/api/v1/calls/group", requireSupabase, requireUser, async (req, res) =
       }
       targets.push(target);
     }
+    const groupLimit = groupParticipantLimit(callerProfile, targets);
+    if (targets.length + 1 > groupLimit) {
+      return res.status(403).json({ error: "GROUP_PLAN_LIMIT_REACHED", plan: callerProfile.plan, max_participants: groupLimit });
+    }
+    const initialEntitlement = callEntitlement(callerProfile, [callerProfile]);
     const roomName = "ttt_group_" + randomUUID();
     const { data: call, error: callError } = await supabaseAdmin.from("calls")
-      .insert({ created_by: req.authUser.id, call_type: "GROUP", status: "RINGING", livekit_room_name: roomName })
-      .select("id,call_type,status,livekit_room_name,created_at").single();
+      .insert({
+        created_by: req.authUser.id, call_type: "GROUP", status: "RINGING",
+        livekit_room_name: roomName, duration_limit_seconds: initialEntitlement.maxDurationSeconds,
+        owner_override_active: initialEntitlement.ownerOverride, effective_plan: initialEntitlement.effectivePlan
+      })
+      .select("id,call_type,status,livekit_room_name,created_at,started_at").single();
     if (callError) throw callError;
     const now = new Date().toISOString();
     const participants = [
@@ -536,9 +641,12 @@ app.post("/api/v1/calls/group", requireSupabase, requireUser, async (req, res) =
     if (notificationError) throw notificationError;
     await sendCallPush(targets.map(target => target.id), "Incoming TingTring group call", callerName,
       { call_id: call.id, call_type: "GROUP", room_name: roomName });
-    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
+    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "24h" });
     token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
-    res.status(201).json({ call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(), call_type: "GROUP" });
+    res.status(201).json({
+      call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(),
+      call_type: "GROUP", ...entitlementPayload(initialEntitlement, call)
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "GROUP_CALL_START_FAILED" });
@@ -557,13 +665,20 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
     const target = await resolveTttUserId(targetId);
     if (!target) return res.status(404).json({ error: "USER_NOT_FOUND" });
     if (target.id === req.authUser.id) return res.status(400).json({ error: "CANNOT_CALL_SELF" });
+    const callerProfile = await getProfile(supabaseAdmin, req.authUser.id);
+    if (!callerProfile || callerProfile.status !== "ACTIVE") return res.status(403).json({ error: "ACCOUNT_UNAVAILABLE" });
+    const initialEntitlement = callEntitlement(callerProfile, [callerProfile]);
     const roomName = "ttt_" + randomUUID();
     const { data: call, error: callError } = await supabaseAdmin.from("calls")
-      .insert({ created_by: req.authUser.id, call_type: callType, status: "RINGING", livekit_room_name: roomName })
-      .select("id,call_type,status,livekit_room_name,created_at").single();
+      .insert({
+        created_by: req.authUser.id, call_type: callType, status: "RINGING",
+        livekit_room_name: roomName, duration_limit_seconds: initialEntitlement.maxDurationSeconds,
+        owner_override_active: initialEntitlement.ownerOverride, effective_plan: initialEntitlement.effectivePlan
+      })
+      .select("id,call_type,status,livekit_room_name,created_at,started_at").single();
     if (callError) throw callError;
     const { error: participantError } = await supabaseAdmin.from("call_participants").insert([
-      { call_id: call.id, user_id: req.authUser.id, role: "CALLER", status: "RINGING" },
+      { call_id: call.id, user_id: req.authUser.id, role: "CALLER", status: "ACCEPTED", joined_at: new Date().toISOString() },
       { call_id: call.id, user_id: target.id, role: "CALLEE", status: "RINGING" }
     ]);
     if (participantError) {
@@ -581,9 +696,12 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
     if (notificationError) throw notificationError;
     await sendCallPush([target.id], "Incoming TingTring call", callerName,
       { call_id: call.id, call_type: callType, room_name: roomName });
-    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
+    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "24h" });
     token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
-    res.status(201).json({ call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(), call_type: callType });
+    res.status(201).json({
+      call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(),
+      call_type: callType, ...entitlementPayload(initialEntitlement, call)
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "CALL_START_FAILED" });
@@ -597,11 +715,25 @@ app.post("/api/v1/calls/:callId/accept", requireSupabase, requireUser, async (re
     const livekitSecret = process.env.LIVEKIT_API_SECRET;
     if (!livekitUrl || !livekitKey || !livekitSecret) return res.status(503).json({ error: "LIVEKIT_NOT_CONFIGURED" });
     const { data: participant, error: lookupError } = await supabaseAdmin.from("call_participants")
-      .select("call_id,role,call:call_id(id,created_by,call_type,status,livekit_room_name)")
+      .select("call_id,role,status,call:call_id(id,created_by,call_type,status,livekit_room_name,started_at,duration_limit_seconds)")
       .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).in("role", ["CALLEE", "PARTICIPANT"]).maybeSingle();
     if (lookupError) throw lookupError;
     if (!participant?.call) return res.status(404).json({ error: "CALL_NOT_FOUND" });
     if (!["RINGING", "ACCEPTED"].includes(participant.call.status)) return res.status(409).json({ error: "CALL_NOT_RINGING" });
+    const callCreator = await getProfile(supabaseAdmin, participant.call.created_by);
+    if (!callCreator) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    const acceptingProfile = await getProfile(supabaseAdmin, req.authUser.id);
+    if (participant.call.call_type === "GROUP" && !isOverrideOwner(acceptingProfile)) {
+      const { data: acceptedRows, error: acceptedError } = await supabaseAdmin.from("call_participants")
+        .select("user_id,status,user:user_id(username,plan)")
+        .eq("call_id", req.params.callId).eq("status", "ACCEPTED");
+      if (acceptedError) throw acceptedError;
+      const ownerAlreadyActive = (acceptedRows || []).some(row => isOverrideOwner(row.user));
+      const currentLimit = groupParticipantLimit(callCreator, []);
+      if (!ownerAlreadyActive && (acceptedRows || []).length >= currentLimit) {
+        return res.status(403).json({ error: "GROUP_PLAN_LIMIT_REACHED", plan: callCreator.plan, max_participants: currentLimit });
+      }
+    }
     if (participant.call.status === "RINGING") {
       const { data: acceptedCall, error: callError } = await supabaseAdmin.from("calls")
         .update({ status: "ACCEPTED", connected_at: new Date().toISOString(), started_at: new Date().toISOString() })
@@ -619,12 +751,29 @@ app.post("/api/v1/calls/:callId/accept", requireSupabase, requireUser, async (re
       .update({ status: "ACCEPTED", joined_at: new Date().toISOString() })
       .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("status", "RINGING");
     if (participantError) throw participantError;
-    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
+    const callContext = await loadCallEntitlement(req.params.callId, req.authUser.id);
+    if (callContext.error) return res.status(404).json({ error: callContext.error });
+    const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "24h" });
     token.addGrant({ roomJoin: true, room: participant.call.livekit_room_name, canPublish: true, canSubscribe: true });
-    res.status(200).json({ call_id: participant.call.id, room_name: participant.call.livekit_room_name, livekit_url: livekitUrl, token: await token.toJwt(), call_type: participant.call.call_type });
+    res.status(200).json({
+      call_id: participant.call.id, room_name: participant.call.livekit_room_name,
+      livekit_url: livekitUrl, token: await token.toJwt(), call_type: participant.call.call_type,
+      ...entitlementPayload(callContext.entitlement, callContext.call)
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "CALL_ACCEPT_FAILED" });
+  }
+});
+
+app.get("/api/v1/calls/:callId/entitlements", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const context = await loadCallEntitlement(req.params.callId, req.authUser.id);
+    if (context.error) return res.status(404).json({ error: context.error });
+    return res.status(200).json(entitlementPayload(context.entitlement, context.call));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "CALL_ENTITLEMENT_LOOKUP_FAILED" });
   }
 });
 
@@ -730,7 +879,7 @@ app.post("/api/v1/calls/:callId/end", requireSupabase, requireUser, async (req, 
     if (participant.call?.call_type === "GROUP" && participant.role !== "CALLER") return res.status(403).json({ error: "CALLER_ONLY_END_GROUP_CALL" });
     await supabaseAdmin.from("call_participants").update({ status: "ENDED", left_at: new Date().toISOString() })
       .eq("call_id", req.params.callId).in("status", ["RINGING", "ACCEPTED"]);
-    const { error } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString() })
+    const { error } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString(), ended_reason: "USER_ENDED" })
       .eq("id", req.params.callId).in("status", ["RINGING", "ACCEPTED"]);
     if (error) throw error;
     res.status(204).send();
@@ -919,4 +1068,10 @@ app.use((err, _req, res, _next) => {
   return res.status(500).json({ error: "INTERNAL_SERVER_ERROR" });
 });
 app.use((_req, res) => res.status(404).json({ error: "NOT_FOUND" }));
+
+const callLimitSweep = setInterval(() => {
+  enforceCallDurationLimits().catch(error => console.error("Call duration enforcement failed:", error?.message || error));
+}, 10000);
+callLimitSweep.unref();
+
 app.listen(port, "0.0.0.0", () => console.log("TingTring Talk backend listening on port " + port));
