@@ -26,7 +26,7 @@ data class Contact(val id: String, val user: TttUser)
 data class CallSession(
     val callId: String, val roomName: String, val livekitUrl: String, val token: String, val callType: String,
     val isGroupCaller: Boolean = false, val maxDurationSeconds: Long? = null,
-    val ownerOverride: Boolean = false, val effectivePlan: String = "FREE"
+    val ownerOverride: Boolean = false, val effectivePlan: String = "FREE", val callStatus: String = "RINGING"
 )
 data class CallEntitlement(
     val maxDurationSeconds: Long?, val ownerOverride: Boolean, val effectivePlan: String,
@@ -220,7 +220,8 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
             r.value.optString("call_type", "AUDIO"),
             maxDurationSeconds = if (r.value.isNull("max_duration_seconds")) null else r.value.optLong("max_duration_seconds", -1L).takeIf { it > 0L },
             ownerOverride = r.value.optBoolean("owner_override", false),
-            effectivePlan = r.value.optString("effective_plan", "FREE")
+            effectivePlan = r.value.optString("effective_plan", "FREE"),
+            callStatus = r.value.optString("call_status", "RINGING")
         ))
     }
 
