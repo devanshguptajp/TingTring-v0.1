@@ -10,7 +10,7 @@
 - Migration `007_owner_user_management.sql` adds the Premium plan enum value.
 
 ## Endpoints
-- `GET /api/v1/owner/dashboard`
+- `GET /api/v1/owner/dashboard?page=1&page_size=50` — `page_size` accepts 25, 50, or 100; response includes exact `total_records` and `has_more`.
 - `PATCH /api/v1/owner/users/:userId/plan` — accepts `FREE`, `PRO`, `PREMIUM`
 - `PATCH /api/v1/owner/users/:userId/status` — accepts `ACTIVE`, `SUSPENDED`
 
