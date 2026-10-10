@@ -85,6 +85,20 @@ try {
     assert.equal(response.status, 503, "Protected call route must fail closed without Supabase: " + path);
     assert.equal((await response.json()).error, "SUPABASE_NOT_CONFIGURED");
   }
+  for (const path of [
+    "/api/v1/owner/dashboard",
+    "/api/v1/owner/users/search?q=devansh",
+    "/api/v1/owner/users/00000000-0000-0000-0000-000000000001/plan",
+    "/api/v1/owner/users/00000000-0000-0000-0000-000000000001/status"
+  ]) {
+    const method = path.endsWith("/plan") || path.endsWith("/status") ? "PATCH" : "GET";
+    const response = await fetch("http://127.0.0.1:3189" + path, {
+      method, headers: { Authorization: "Bearer fake", "Content-Type": "application/json" },
+      body: method === "PATCH" ? JSON.stringify({ plan: "PRO", status: "SUSPENDED" }) : undefined
+    });
+    assert.equal(response.status, 503, "Owner management route must fail closed without Supabase: " + path);
+    assert.equal((await response.json()).error, "SUPABASE_NOT_CONFIGURED");
+  }
   const ownerCountWithoutSupabase = await fetch("http://127.0.0.1:3189/api/v1/owner/count", { headers: { Authorization: "Bearer fake" } });
   assert.equal(ownerCountWithoutSupabase.status, 503);
   assert.equal((await ownerCountWithoutSupabase.json()).error, "SUPABASE_NOT_CONFIGURED");
