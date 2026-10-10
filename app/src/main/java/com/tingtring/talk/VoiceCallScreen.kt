@@ -195,10 +195,14 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
             elapsedSeconds = 0L
             TttConnectionRegistry.setActive(session.callId)
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            runCatching { room.disconnect() }
+            connected = false
             error = "Connection timed out. Check your internet and try again."
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
+            runCatching { room.disconnect() }
+            connected = false
             error = friendlyCallError(t)
         }
     }
@@ -263,10 +267,14 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
                         error = null
                         TttConnectionRegistry.setActive(session.callId)
                     } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                        runCatching { room.disconnect() }
+                        connected = false
                         error = "Connection timed out. Check your internet and try again."
                     } catch (e: CancellationException) {
                         throw e
                     } catch (t: Throwable) {
+                        runCatching { room.disconnect() }
+                        connected = false
                         error = friendlyCallError(t)
                     }
                 } }) { Text("Retry connection") }
