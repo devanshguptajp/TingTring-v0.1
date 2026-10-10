@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.UUID
 
 data class TttUser(
     val id: String,
@@ -34,6 +35,17 @@ class SessionStore(context: Context) {
     var termsAccepted: Boolean
         get() = prefs.getBoolean("terms_accepted_v1", false)
         set(v) { prefs.edit().putBoolean("terms_accepted_v1", v).apply() }
+    var pushToken: String?
+        get() = prefs.getString("fcm_push_token", null)
+        set(v) { prefs.edit().putString("fcm_push_token", v).apply() }
+    val installationId: String
+        get() {
+            val existing = prefs.getString("installation_id", null)
+            if (!existing.isNullOrBlank()) return existing
+            val created = UUID.randomUUID().toString()
+            prefs.edit().putString("installation_id", created).apply()
+            return created
+        }
     fun clear() { prefs.edit().clear().apply() }
 }
 
@@ -88,6 +100,13 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         avatarUrl = j.optString("avatar_url").takeIf { it.isNotBlank() },
         status = j.optString("status", "ACTIVE")
     )
+
+    suspend fun registerPushToken(token: String): ApiResult<Unit> {
+        val r = request("POST", "/api/v1/devices/push-token", JSONObject().apply {
+            put("push_token", token); put("installation_id", session.installationId)
+        }, auth = true)
+        return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
+    }
 
     suspend fun passwordLogin(email: String, password: String): ApiResult<TttUser> {
         val r = request("POST", "/api/v1/auth/login/password", JSONObject().apply {
