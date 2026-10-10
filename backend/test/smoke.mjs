@@ -100,7 +100,7 @@ try {
     "/api/v1/calls/00000000-0000-0000-0000-000000000001/decline",
     "/api/v1/calls/00000000-0000-0000-0000-000000000001/end"
   ]) {
-    const method = path.endsWith("/participants") ? "GET" : "POST";
+    const method = path.endsWith("/participants") || path.endsWith("/entitlements") ? "GET" : "POST";
     const response = await fetch("http://127.0.0.1:3189" + path, {
       method, headers: { Authorization: "Bearer fake" }
     });
