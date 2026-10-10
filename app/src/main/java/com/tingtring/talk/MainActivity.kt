@@ -1,6 +1,8 @@
 package com.tingtring.talk
 
 import android.os.Bundle
+import android.content.Context
+import android.net.Uri
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.ComponentName
@@ -41,6 +43,21 @@ import kotlinx.coroutines.delay
 import io.livekit.android.LiveKit
 
 private const val API_BASE_URL="http://10.0.2.2:3000"
+
+private fun requestTelecomOutgoingCall(context: Context, target: TttUser, session: CallSession) {
+ runCatching {
+  val telecom = context.getSystemService(TelecomManager::class.java)
+  val component = ComponentName(context, com.tingtring.talk.telecom.TttConnectionService::class.java)
+  val handle = PhoneAccountHandle(component, "tingtring_talk")
+  val extras = Bundle().apply {
+   putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+   putString("display_name", target.displayName)
+   putString("ttt_call_id", session.callId)
+   putString("ttt_call_type", session.callType)
+  }
+  telecom.placeCall(Uri.parse("ttt:${target.tttUserId}"), extras)
+ }
+}
 
 class MainActivity:ComponentActivity(){
  override fun onCreate(state:Bundle?){super.onCreate(state);registerTttPhoneAccount();val session=SessionStore(this);val api=ApiClient(API_BASE_URL,session);setContent{TingTringTheme{App(api,session)}}}
@@ -227,12 +244,12 @@ class MainActivity:ComponentActivity(){
 }
 
 @Composable private fun Contacts(api:ApiClient,onStartCall:(CallSession)->Unit,vanyaAnimationEnabled:Boolean,modifier:Modifier=Modifier){
- var query by rememberSaveable{mutableStateOf("")};var results by remember{mutableStateOf<List<TttUser>>(emptyList())};var contacts by remember{mutableStateOf<List<Contact>>(emptyList())};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope()
+ var query by rememberSaveable{mutableStateOf("")};var results by remember{mutableStateOf<List<TttUser>>(emptyList())};var contacts by remember{mutableStateOf<List<Contact>>(emptyList())};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope();val context=LocalContext.current
  LaunchedEffect(Unit){contacts=api.contacts().value?:emptyList()}
  Column(modifier.fillMaxSize().padding(18.dp)){Text("Contacts",style=MaterialTheme.typography.headlineLarge);Spacer(Modifier.height(12.dp));VanyaCorrectionField(query,{query=it},label="Username or TingTring ID",modifier=Modifier.fillMaxWidth(),enabled=vanyaAnimationEnabled)
  Spacer(Modifier.height(8.dp));Button(onClick={scope.launch{val r=api.search(query);results=r.value?:emptyList();error=r.error}},enabled=query.length>=3){Icon(Icons.Default.Search,null);Spacer(Modifier.width(8.dp));Text("Search")}
  error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(8.dp))}
- LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)){items(results){u->UserRow(u,"Add","Call",{scope.launch{val r=api.addContact(u.tttUserId);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(u.tttUserId);error=r.error;r.value?.let(onStartCall)}})};if(results.isEmpty())item{Text("Saved contacts",style=MaterialTheme.typography.titleLarge)};items(contacts){c->UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let(onStartCall)}})}}}
+ LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)){items(results){u->UserRow(u,"Add","Call",{scope.launch{val r=api.addContact(u.tttUserId);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(u.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,u,session);onStartCall(session)}}})};if(results.isEmpty())item{Text("Saved contacts",style=MaterialTheme.typography.titleLarge)};items(contacts){c->UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}})}}}
 }
 @Composable private fun UserRow(user:TttUser,action:String,callAction:String,onAction:()->Unit,onCall:()->Unit)=Card(Modifier.fillMaxWidth()){Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(user.displayName,fontWeight=FontWeight.SemiBold);Text("@"+user.username+" • "+user.tttUserId,style=MaterialTheme.typography.bodySmall)};TextButton(onClick=onCall){Text(callAction)};TextButton(onClick=onAction){Text(action)}}}
 
@@ -296,6 +313,7 @@ class MainActivity:ComponentActivity(){
    room.connect(session.livekitUrl,session.token)
    if(!room.localParticipant.setMicrophoneEnabled(true)) throw IllegalStateException("MICROPHONE_ENABLE_FAILED")
    connected=true
+   com.tingtring.talk.telecom.TttConnectionRegistry.setActive(session.callId)
   }catch(t:Throwable){error=t.message?:"CALL_CONNECTION_FAILED"}
  }
  Column(Modifier.fillMaxSize().padding(28.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
@@ -306,7 +324,7 @@ class MainActivity:ComponentActivity(){
   Spacer(Modifier.height(28.dp))
   Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
    OutlinedButton(enabled=connected,onClick={scope.launch{muted=!muted;room.localParticipant.setMicrophoneEnabled(!muted)}}){Text(if(muted)"Unmute"else"Mute")}
-   Button(onClick={scope.launch{api.endCall(session.callId);room.disconnect();onEnded()}}){Text("End call")}
+   Button(onClick={scope.launch{api.endCall(session.callId);room.disconnect();com.tingtring.talk.telecom.TttConnectionRegistry.disconnect(session.callId);onEnded()}}){Text("End call")}
   }
  }
 }
