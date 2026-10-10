@@ -522,7 +522,7 @@ app.post("/api/v1/calls/:callId/accept", requireSupabase, requireUser, async (re
 app.get("/api/v1/calls/:callId/participants", requireSupabase, requireUser, async (req, res) => {
   try {
     const { data: membership, error: membershipError } = await supabaseAdmin.from("call_participants")
-      .select("call_id,role,call:call_id(call_type,status)").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
+      .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
     if (membershipError) throw membershipError;
     if (!membership) return res.status(404).json({ error: "CALL_NOT_FOUND" });
     const { data, error } = await supabaseAdmin.from("call_participants")
@@ -615,12 +615,12 @@ app.post("/api/v1/calls/:callId/decline", requireSupabase, requireUser, async (r
 app.post("/api/v1/calls/:callId/end", requireSupabase, requireUser, async (req, res) => {
   try {
     const { data: participant, error: participantError } = await supabaseAdmin.from("call_participants")
-      .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
+      .select("call_id,role,call:call_id(call_type,status)").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
     if (participantError) throw participantError;
     if (!participant) return res.status(404).json({ error: "CALL_NOT_FOUND" });
     if (participant.call?.call_type === "GROUP" && participant.role !== "CALLER") return res.status(403).json({ error: "CALLER_ONLY_END_GROUP_CALL" });
     await supabaseAdmin.from("call_participants").update({ status: "ENDED", left_at: new Date().toISOString() })
-      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).neq("status", "ENDED");
+      .eq("call_id", req.params.callId).in("status", ["RINGING", "ACCEPTED"]);
     const { error } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString() })
       .eq("id", req.params.callId).in("status", ["RINGING", "ACCEPTED"]);
     if (error) throw error;
