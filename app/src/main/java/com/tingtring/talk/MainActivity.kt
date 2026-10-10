@@ -9,6 +9,7 @@ import android.content.ComponentName
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import android.telecom.VideoProfile
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -226,6 +227,7 @@ class MainActivity:ComponentActivity(){
       putString("notification_id",next.notificationId)
       putString("display_name",next.callerName)
       putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS,Uri.parse("ttt:incoming"))
+      putInt(TelecomManager.EXTRA_INCOMING_VIDEO_STATE,if(next.callType=="VIDEO") VideoProfile.STATE_BIDIRECTIONAL else VideoProfile.STATE_AUDIO_ONLY)
      }
      context.getSystemService(TelecomManager::class.java).addNewIncomingCall(handle,extras)
     }
