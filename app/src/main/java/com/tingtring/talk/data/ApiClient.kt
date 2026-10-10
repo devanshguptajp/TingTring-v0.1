@@ -17,12 +17,19 @@ data class TttUser(
     val displayName: String,
     val plan: String,
     val avatarUrl: String?,
-    val status: String
+    val status: String,
+    val email: String? = null,
+    val createdAt: String? = null,
+    val lastSeenAt: String? = null
 )
 data class Contact(val id: String, val user: TttUser)
 data class CallSession(val callId: String, val roomName: String, val livekitUrl: String, val token: String, val callType: String, val isGroupCaller: Boolean = false)
 data class CallParticipant(val user: TttUser, val role: String, val status: String, val joinedAt: String?)
 data class ApiResult<T>(val value: T? = null, val error: String? = null)
+data class OwnerDashboard(
+    val users: List<TttUser>, val total: Int, val active: Int, val suspended: Int,
+    val free: Int, val pro: Int, val premium: Int, val owners: Int
+)
 data class IncomingCall(val notificationId: String, val callId: String, val callerName: String, val callType: String)
 
 class SessionStore(context: Context) {
@@ -99,7 +106,10 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         displayName = j.optString("display_name"),
         plan = j.optString("plan", "FREE"),
         avatarUrl = j.optString("avatar_url").takeIf { it.isNotBlank() },
-        status = j.optString("status", "ACTIVE")
+        status = j.optString("status", "ACTIVE"),
+        email = j.optString("email").takeIf { it.isNotBlank() && it != "null" },
+        createdAt = j.optString("created_at").takeIf { it.isNotBlank() && it != "null" },
+        lastSeenAt = j.optString("last_seen_at").takeIf { it.isNotBlank() && it != "null" }
     )
 
     suspend fun registerPushToken(token: String): ApiResult<Unit> {
@@ -291,6 +301,29 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
     suspend fun removeContact(id: String): ApiResult<Unit> {
         val r = request("DELETE", "/api/v1/contacts/$id", auth = true)
         return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
+    }
+
+    suspend fun ownerDashboard(): ApiResult<OwnerDashboard> {
+        val r = request("GET", "/api/v1/owner/dashboard", auth = true)
+        if (r.value == null) return ApiResult(error = r.error)
+        val counts = r.value.optJSONObject("counts") ?: JSONObject()
+        val a = r.value.optJSONArray("users") ?: JSONArray()
+        return ApiResult(value = OwnerDashboard(
+            users = (0 until a.length()).map { user(a.getJSONObject(it)) },
+            total = counts.optInt("total"), active = counts.optInt("active"),
+            suspended = counts.optInt("suspended"), free = counts.optInt("free"),
+            pro = counts.optInt("pro"), premium = counts.optInt("premium"), owners = counts.optInt("owners")
+        ))
+    }
+
+    suspend fun ownerSetPlan(userId: String, plan: String): ApiResult<Unit> {
+        val r = request("PATCH", "/api/v1/owner/users/$userId/plan", JSONObject().apply { put("plan", plan) }, auth = true)
+        return if (r.value != null) ApiResult(Unit) else ApiResult(error = r.error)
+    }
+
+    suspend fun ownerSetStatus(userId: String, status: String): ApiResult<Unit> {
+        val r = request("PATCH", "/api/v1/owner/users/$userId/status", JSONObject().apply { put("status", status) }, auth = true)
+        return if (r.value != null) ApiResult(Unit) else ApiResult(error = r.error)
     }
 
     suspend fun ownerCount(): ApiResult<Pair<Int, Int>> {
