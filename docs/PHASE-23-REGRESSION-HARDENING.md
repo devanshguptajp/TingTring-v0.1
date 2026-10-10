@@ -1,6 +1,6 @@
 # Phase 23 — Regression Hardening
 
-Status: TESTS EXPANDED — CI RESULT MUST BE CHECKED
+Status: BACKEND CI GREEN — ANDROID BUILD/EMULATOR CHECK RUNNING
 
 Implemented:
 - Backend smoke tests now assert that group-call creation, participant roster, leave, decline and end routes fail closed with `503 SUPABASE_NOT_CONFIGURED` when the database service is not configured.
@@ -10,8 +10,8 @@ Implemented:
 - Server push delivery is optional and degrades to persisted in-app notifications when Firebase is not configured.
 
 Required before release:
-- Latest backend workflow green.
-- Latest Android assembleDebug and emulator smoke workflow green.
+- Backend smoke-test workflow is green for the expanded protected-route checks.
+- Latest Android assembleDebug and emulator smoke workflow must finish green before release.
 - Apply repository SQL migrations to a test Supabase project.
 - Test account A calling B, B declining/accepting, and three devices joining/leaving a group.
 - Verify locked-screen and killed-app incoming-call behavior on physical Android devices.
