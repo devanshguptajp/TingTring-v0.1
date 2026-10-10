@@ -288,12 +288,54 @@ class MainActivity:ComponentActivity(){
 }
 
 @Composable private fun Contacts(api:ApiClient,onStartCall:(CallSession)->Unit,vanyaAnimationEnabled:Boolean,modifier:Modifier=Modifier){
- var query by rememberSaveable{mutableStateOf("")};var results by remember{mutableStateOf<List<TttUser>>(emptyList())};var contacts by remember{mutableStateOf<List<Contact>>(emptyList())};var error by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope();val context=LocalContext.current
+ var query by rememberSaveable{mutableStateOf("")}
+ var results by remember{mutableStateOf<List<TttUser>>(emptyList())}
+ var contacts by remember{mutableStateOf<List<Contact>>(emptyList())}
+ var selectedForGroup by remember{mutableStateOf<Set<String>>(emptySet())}
+ var error by remember{mutableStateOf<String?>(null)}
+ var groupLoading by remember{mutableStateOf(false)}
+ val scope=rememberCoroutineScope()
+ val context=LocalContext.current
  LaunchedEffect(Unit){contacts=api.contacts().value?:emptyList()}
- Column(modifier.fillMaxSize().padding(18.dp)){Text("Contacts",style=MaterialTheme.typography.headlineLarge);Spacer(Modifier.height(12.dp));VanyaCorrectionField(query,{query=it},label="Username or TingTring ID",modifier=Modifier.fillMaxWidth(),enabled=vanyaAnimationEnabled)
- Spacer(Modifier.height(8.dp));Button(onClick={scope.launch{val r=api.search(query);results=r.value?:emptyList();error=r.error}},enabled=query.length>=3){Icon(Icons.Default.Search,null);Spacer(Modifier.width(8.dp));Text("Search")}
- error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(8.dp))}
- LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)){items(results){u->UserRow(u,"Add","Call",{scope.launch{val r=api.addContact(u.tttUserId);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(u.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,u,session);onStartCall(session)}}})};if(results.isEmpty())item{Text("Saved contacts",style=MaterialTheme.typography.titleLarge)};items(contacts){c->UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}})}}}
+ Column(modifier.fillMaxSize().padding(18.dp)){
+  Text("Contacts",style=MaterialTheme.typography.headlineLarge)
+  Spacer(Modifier.height(12.dp))
+  VanyaCorrectionField(query,{query=it},label="Username or TingTring ID",modifier=Modifier.fillMaxWidth(),enabled=vanyaAnimationEnabled)
+  Spacer(Modifier.height(8.dp))
+  Button(onClick={scope.launch{val r=api.search(query);results=r.value?:emptyList();error=r.error}},enabled=query.length>=3){Icon(Icons.Default.Search,null);Spacer(Modifier.width(8.dp));Text("Search")}
+  if(selectedForGroup.size>=2){
+   Button(
+    onClick={
+     groupLoading=true;error=null
+     scope.launch{
+      val r=api.startGroupCall(selectedForGroup.toList())
+      if(r.value!=null){selectedForGroup=emptySet();onStartCall(r.value)}else error=r.error
+      groupLoading=false
+     }
+    },
+    enabled=!groupLoading,
+    modifier=Modifier.fillMaxWidth()
+   ){if(groupLoading)CircularProgressIndicator(Modifier.size(18.dp),color=MaterialTheme.colorScheme.onPrimary)else Text("Start group call (${selectedForGroup.size} contacts)")}
+  }
+  error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(8.dp))}
+  LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)){
+   items(results){u->
+    UserRow(u,"Add","Call",{scope.launch{val r=api.addContact(u.tttUserId);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(u.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,u,session);onStartCall(session)}}})
+   }
+   if(results.isEmpty())item{Text("Saved contacts · select two or more for a group call",style=MaterialTheme.typography.titleLarge)}
+   items(contacts){c->
+    Row(verticalAlignment=Alignment.CenterVertically){
+     androidx.compose.material3.Checkbox(
+      checked=c.user.tttUserId in selectedForGroup,
+      onCheckedChange={checked->selectedForGroup=if(checked)selectedForGroup+c.user.tttUserId else selectedForGroup-c.user.tttUserId}
+     )
+     Box(Modifier.weight(1f)){
+      UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null){contacts=api.contacts().value?:contacts;selectedForGroup=selectedForGroup-c.user.tttUserId}}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}})
+     }
+    }
+   }
+  }
+ }
 }
 @Composable private fun UserRow(user:TttUser,action:String,callAction:String,onAction:()->Unit,onCall:()->Unit)=Card(Modifier.fillMaxWidth()){Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(user.displayName,fontWeight=FontWeight.SemiBold);Text("@"+user.username+" • "+user.tttUserId,style=MaterialTheme.typography.bodySmall)};TextButton(onClick=onCall){Text(callAction)};TextButton(onClick=onAction){Text(action)}}}
 
