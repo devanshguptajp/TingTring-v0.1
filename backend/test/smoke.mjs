@@ -2,6 +2,27 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { validateEmail, normalizeEmail, validateUsername, validateDisplayName, publicProfile, authResponse, getAuthenticatedUser } from "../src/auth.js";
+import { callEntitlement, groupParticipantLimit, planEntitlement } from "../src/entitlements.js";
+
+
+assert.equal(planEntitlement("FREE").maxDurationSeconds, 2700);
+assert.equal(planEntitlement("FREE").maxParticipants, 4);
+assert.equal(planEntitlement("PRO").maxDurationSeconds, 9000);
+assert.equal(planEntitlement("PRO").maxParticipants, 10);
+assert.equal(planEntitlement("PREMIUM").maxDurationSeconds, 14400);
+assert.equal(planEntitlement("PREMIUM").maxParticipants, 25);
+assert.equal(planEntitlement("OWNER").maxDurationSeconds, null);
+assert.equal(planEntitlement("OWNER").maxParticipants, 25);
+const freeCaller = { plan: "FREE", username: "ordinary_user" };
+const designatedOwner = { plan: "OWNER", username: "dev17112012" };
+assert.equal(callEntitlement(freeCaller, []).maxDurationSeconds, 2700);
+assert.equal(callEntitlement(freeCaller, [designatedOwner]).ownerOverride, true);
+assert.equal(callEntitlement(freeCaller, [designatedOwner]).maxDurationSeconds, null);
+assert.equal(callEntitlement(freeCaller, [designatedOwner]).effectivePlan, "OWNER");
+assert.equal(callEntitlement(freeCaller, [designatedOwner]).maxParticipants, 25);
+assert.equal(groupParticipantLimit(freeCaller, []), 4);
+assert.equal(groupParticipantLimit(freeCaller, [designatedOwner]), 25);
+assert.equal(callEntitlement(freeCaller, [{ plan: "PRO", username: "ordinary_pro" }]).maxDurationSeconds, 2700);
 
 assert.equal(validateEmail("User@Example.com"), true);
 assert.equal(normalizeEmail("  User@Example.COM "), "user@example.com");
@@ -74,6 +95,7 @@ try {
   assert.equal((await groupCallWithoutSupabase.json()).error, "SUPABASE_NOT_CONFIGURED");
   for (const path of [
     "/api/v1/calls/00000000-0000-0000-0000-000000000001/participants",
+    "/api/v1/calls/00000000-0000-0000-0000-000000000001/entitlements",
     "/api/v1/calls/00000000-0000-0000-0000-000000000001/leave",
     "/api/v1/calls/00000000-0000-0000-0000-000000000001/decline",
     "/api/v1/calls/00000000-0000-0000-0000-000000000001/end"
