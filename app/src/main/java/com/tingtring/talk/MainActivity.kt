@@ -91,7 +91,8 @@ class MainActivity:ComponentActivity(){
    if (!token.isNullOrBlank()) api.registerPushToken(token)
   }
  }
- \n if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
+ 
+ if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
  else if(!termsAccepted)TermsDialog{api.setTermsAccepted(true);termsAccepted=true}
  else if(user==null)AuthScreen(api){user=it}else if(activeCall!=null)CallScreen(api,activeCall!!){activeCall=null}else MainShell(api,user!!,{activeCall=it}){user=null;session.clear()}
 }
