@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.tingtring.talk.data.ApiClient
 import com.tingtring.talk.data.CallSession
+import com.tingtring.talk.data.CallParticipant
 import com.tingtring.talk.telecom.TttConnectionRegistry
 import io.livekit.android.LiveKit
 import kotlinx.coroutines.CancellationException
@@ -72,6 +73,7 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
     var networkAvailable by remember { mutableStateOf(hasInternet(connectivityManager)) }
     var audioInterrupted by remember { mutableStateOf(false) }
     var elapsedSeconds by rememberSaveable(session.callId) { mutableStateOf(0L) }
+    var participants by remember(session.callId) { mutableStateOf<List<CallParticipant>>(emptyList()) }
     var route by rememberSaveable(session.callId) { mutableStateOf("Earpiece") }
     var availableRoutes by remember { mutableStateOf(listOf("Earpiece", "Speaker")) }
     var permissionGranted by remember {
@@ -224,11 +226,23 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
         }
     }
 
+    LaunchedEffect(session.callId, session.callType, connected) {
+        if (session.callType != "GROUP" || !connected) return@LaunchedEffect
+        while (true) {
+            val result = api.callParticipants(session.callId)
+            result.value?.let { participants = it }
+            delay(4000)
+        }
+    }
+
     fun endCall() {
         if (ending) return
         ending = true
         scope.launch {
-            runCatching { api.endCall(session.callId) }
+            runCatching {
+                if (session.callType == "GROUP" && !session.isGroupCaller) api.leaveGroupCall(session.callId)
+                else api.endCall(session.callId)
+            }
             runCatching { room.disconnect() }
             TttConnectionRegistry.disconnect(session.callId)
             onEnded()
@@ -249,6 +263,19 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(if (connected) formatCallDuration(elapsedSeconds) else if (session.callType == "VIDEO") "Video call session" else "Voice call session",
                 style = MaterialTheme.typography.titleMedium)
+            if (session.callType == "GROUP") {
+                Spacer(Modifier.height(10.dp))
+                Text("Group participants", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                if (participants.isEmpty()) {
+                    Text("Participant list will appear when available.", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    participants.forEach { participant ->
+                        val label = if (participant.user.id.isBlank()) participant.user.tttUserId else participant.user.displayName
+                        Text("$label · ${participant.status.lowercase().replaceFirstChar { it.uppercase() }}",
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
             if (audioInterrupted) {
                 Spacer(Modifier.height(12.dp))
                 Text("Audio is temporarily interrupted by another app or system call.", color = MaterialTheme.colorScheme.error)
@@ -324,7 +351,7 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
                 shape = RoundedCornerShape(18.dp)
             ) {
                 if (ending) CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
-                else Text("End call", fontWeight = FontWeight.SemiBold)
+                else Text(if (session.callType == "GROUP" && !session.isGroupCaller) "Leave group" else if (session.callType == "GROUP") "End group call" else "End call", fontWeight = FontWeight.SemiBold)
             }
         }
     }
