@@ -261,7 +261,7 @@ class MainActivity:ComponentActivity(){
    if(user.plan=="OWNER") NavigationBarItem(selected==3,{selected=3},{Icon(Icons.Default.Settings,null)},label={Text("Owner")})
   }}){p->when(selected){
    0->Home(user,Modifier.padding(p))
-   1->Contacts(api,onStartCall,user.plan != "OWNER",Modifier.padding(p))
+   1->Contacts(api,onStartCall,true,Modifier.padding(p))
    2->Profile(api,user,onLogout,Modifier.padding(p))
    3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onLogout,Modifier.padding(p))
   }}
