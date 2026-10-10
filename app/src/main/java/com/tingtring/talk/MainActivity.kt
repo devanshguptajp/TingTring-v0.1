@@ -320,7 +320,7 @@ class MainActivity:ComponentActivity(){
   error?.let{Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(8.dp))}
   LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=12.dp)){
    items(results){u->
-    UserRow(u,"Add","Call",{scope.launch{val r=api.addContact(u.tttUserId);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(u.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,u,session);onStartCall(session)}}})
+    UserRow(u,"Add","Call",{scope.launch{val r=api.addContact(u.tttUserId);error=r.error;if(r.error==null)contacts=api.contacts().value?:contacts}},{scope.launch{val r=api.startCall(u.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,u,session);onStartCall(session)}}},{scope.launch{val r=api.startCall(u.tttUserId,video=true);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,u,session);onStartCall(session)}}})
    }
    if(results.isEmpty())item{Text("Saved contacts · select two or more for a group call",style=MaterialTheme.typography.titleLarge)}
    items(contacts){c->
@@ -330,14 +330,14 @@ class MainActivity:ComponentActivity(){
       onCheckedChange={checked->selectedForGroup=if(checked)selectedForGroup+c.user.tttUserId else selectedForGroup-c.user.tttUserId}
      )
      Box(Modifier.weight(1f)){
-      UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null){contacts=api.contacts().value?:contacts;selectedForGroup=selectedForGroup-c.user.tttUserId}}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}})
+      UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null){contacts=api.contacts().value?:contacts;selectedForGroup=selectedForGroup-c.user.tttUserId}}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}},{scope.launch{val r=api.startCall(c.user.tttUserId,video=true);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}})
      }
     }
    }
   }
  }
 }
-@Composable private fun UserRow(user:TttUser,action:String,callAction:String,onAction:()->Unit,onCall:()->Unit)=Card(Modifier.fillMaxWidth()){Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(user.displayName,fontWeight=FontWeight.SemiBold);Text("@"+user.username+" • "+user.tttUserId,style=MaterialTheme.typography.bodySmall)};TextButton(onClick=onCall){Text(callAction)};TextButton(onClick=onAction){Text(action)}}}
+@Composable private fun UserRow(user:TttUser,action:String,callAction:String,onAction:()->Unit,onCall:()->Unit,onVideoCall:()->Unit = {})=Card(Modifier.fillMaxWidth()){Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(user.displayName,fontWeight=FontWeight.SemiBold);Text("@"+user.username+" • "+user.tttUserId,style=MaterialTheme.typography.bodySmall)};TextButton(onClick=onCall){Text(callAction)};TextButton(onClick=onVideoCall){Text("Video")};TextButton(onClick=onAction){Text(action)}}}
 
 @Composable private fun Profile(api:ApiClient,user:TttUser,onLogout:()->Unit,modifier:Modifier=Modifier){
  val scope=rememberCoroutineScope()
