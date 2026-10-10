@@ -17,7 +17,7 @@
 ## Setup still required
 1. Apply Supabase migrations in order, including `007_owner_user_management.sql`.
 2. Configure the backend's Supabase URL and service-role key as hosting secrets. Never put the service-role key in the Android app or repository.
-3. Assign the first trusted account the `OWNER` plan once in Supabase (or use an established owner account's guarded grant flow). The Owner tab is shown only when the signed-in profile's plan is `OWNER`.
+3. Set the backend secret `INITIAL_OWNER_EMAIL` to the exact email address you will use for your first owner account. Sign up with that email, verify it, then open **Profile → Activate Owner Console**. The server allows only that verified email to become the first owner, and the database function makes the first-owner claim atomic. If an owner already exists, an existing owner must grant further access.
 4. Rebuild and install the Android app, then verify the dashboard and management actions with test accounts.
 
 ## Safety boundaries
