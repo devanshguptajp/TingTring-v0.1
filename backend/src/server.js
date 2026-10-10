@@ -62,13 +62,14 @@ function entitlementPayload(entitlement, call) {
     owner_override: entitlement.ownerOverride,
     features: entitlement.features,
     call_status: call?.status || "UNKNOWN",
+    ended_reason: call?.ended_reason || null,
     elapsed_seconds: elapsedSeconds
   };
 }
 
 async function loadCallEntitlement(callId, userId) {
   const { data: call, error: callError } = await supabaseAdmin.from("calls")
-    .select("id,created_by,call_type,status,started_at,livekit_room_name,duration_limit_seconds,effective_plan,owner_override_active")
+    .select("id,created_by,call_type,status,started_at,livekit_room_name,duration_limit_seconds,effective_plan,owner_override_active,ended_reason")
     .eq("id", callId).maybeSingle();
   if (callError) throw callError;
   if (!call) return { error: "CALL_NOT_FOUND" };
