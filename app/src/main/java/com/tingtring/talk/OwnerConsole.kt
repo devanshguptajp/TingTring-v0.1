@@ -28,14 +28,24 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
     var ownerTarget by remember { mutableStateOf<TttUser?>(null) }
     var ownerConfirmStep by rememberSaveable { mutableIntStateOf(0) }
     var ownerPassword by rememberSaveable { mutableStateOf("") }
+    var page by rememberSaveable { mutableIntStateOf(1) }
+    var totalRecords by remember { mutableIntStateOf(0) }
+    var hasMore by remember { mutableStateOf(false) }
+    var searchMode by rememberSaveable { mutableStateOf(false) }
+    val pageSize = 50
     val scope = rememberCoroutineScope()
 
-    fun refresh() {
+    fun refresh(requestedPage: Int = page) {
         scope.launch {
             loading = true
-            val r = api.ownerDashboard()
+            error = null
+            val r = api.ownerDashboard(requestedPage, pageSize)
             if (r.value != null) {
                 users = r.value.users
+                page = r.value.page
+                totalRecords = r.value.totalRecords
+                hasMore = r.value.hasMore
+                searchMode = false
                 counts = mapOf("Total" to r.value.total, "Active" to r.value.active, "Suspended" to r.value.suspended,
                     "Free" to r.value.free, "Pro" to r.value.pro, "Premium" to r.value.premium, "Owners" to r.value.owners)
             } else error = r.error
@@ -44,7 +54,7 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
             loading = false
         }
     }
-    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(Unit) { refresh(1) }
 
     Column(modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Owner Console", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
@@ -76,14 +86,16 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             Button(enabled = query.trim().length >= 3 && !loading, onClick = {
                 scope.launch {
-                    loading = true; error = null; message = null
+                    loading = true; error = null; message = null; searchMode = true
                     val r = api.ownerSearchUsers(query.trim())
-                    if (r.value != null) users = r.value else error = r.error
-                    selected = null
+                    if (r.value != null) {
+                        users = r.value
+                        selected = null
+                    } else error = r.error
                     loading = false
                 }
             }, modifier = Modifier.weight(1f)) { Text("Search") }
-            OutlinedButton(enabled = !loading, onClick = { query = ""; refresh() }) { Text("All users") }
+            OutlinedButton(enabled = !loading, onClick = { query = ""; refresh(1) }) { Text("All users") }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
@@ -161,7 +173,21 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
             }
         }
 
-        Text("Users (${users.size} shown)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text(
+            if (searchMode) "Search results (${users.size})" else "Users ($totalRecords total)",
+            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold
+        )
+        if (!searchMode) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedButton(enabled = page > 1 && !loading, onClick = { refresh(page - 1) }) { Text("Previous") }
+                Text("Page $page · ${users.size} shown", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                Button(enabled = hasMore && !loading, onClick = { refresh(page + 1) }) { Text("Next") }
+            }
+        }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f, fill = false)) {
             items(users, key = { it.id }) { user ->
                 OutlinedCard(onClick = { selected = user; newId = ""; error = null; message = null }, modifier = Modifier.fillMaxWidth()) {
