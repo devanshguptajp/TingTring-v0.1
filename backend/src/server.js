@@ -5,6 +5,8 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { AccessToken } from "livekit-server-sdk";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 import {
   createAuthClient, getAuthenticatedUser, getProfile, ensureProfile,
   publicProfile, authResponse, normalizeEmail, validateEmail,
@@ -47,6 +49,56 @@ async function resolveTttUserId(value) {
   const current = await supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,status,plan,avatar_url").eq("id", alias.data.reserved_for_user_id).eq("status", "ACTIVE").maybeSingle();
   if (current.error) throw current.error;
   return current.data || null;
+}
+
+let firebaseMessaging = undefined;
+function getFirebaseMessaging() {
+  if (firebaseMessaging !== undefined) return firebaseMessaging;
+  firebaseMessaging = null;
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) return null;
+  try {
+    const serviceAccount = JSON.parse(raw);
+    const app = getApps().find(existing => existing.name === "ttt-push")
+      || initializeApp({ credential: cert(serviceAccount) }, "ttt-push");
+    firebaseMessaging = getMessaging(app);
+  } catch (error) {
+    console.error("Firebase push is not configured correctly:", error?.message || error);
+  }
+  return firebaseMessaging;
+}
+
+async function sendCallPush(userIds, title, body, data) {
+  try {
+    const messaging = getFirebaseMessaging();
+    if (!messaging || !userIds.length) return;
+    const { data: devices, error } = await supabaseAdmin.from("devices")
+      .select("id,user_id,push_token").in("user_id", userIds).eq("is_active", true).not("push_token", "is", null);
+    if (error) throw error;
+    const rows = (devices || []).filter(device => typeof device.push_token === "string" && device.push_token.length > 20);
+    if (!rows.length) return;
+    const result = await messaging.sendEachForMulticast({
+      tokens: rows.map(device => device.push_token),
+      notification: { title, body },
+      data: Object.fromEntries(Object.entries(data || {}).map(([key, value]) => [key, String(value ?? "")])),
+      android: { priority: "high", notification: { channelId: "ttt_incoming_calls", sound: "default", visibility: "public" } }
+    });
+    const staleTokens = [];
+    result.responses.forEach((response, index) => {
+      const code = response.error?.code || "";
+      if (code.includes("registration-token-not-registered") || code.includes("invalid-registration-token")) {
+        staleTokens.push(rows[index].push_token);
+      }
+    });
+    if (staleTokens.length) {
+      const { error: disableError } = await supabaseAdmin.from("devices")
+        .update({ is_active: false }).in("push_token", staleTokens);
+      if (disableError) console.error("Could not disable stale push tokens:", disableError.message);
+    }
+  } catch (error) {
+    // Calls still work through in-app notification polling if push delivery is unavailable.
+    console.error("Call push delivery failed:", error?.message || error);
+  }
 }
 
 function requireSupabase(req, res, next) {
@@ -374,6 +426,8 @@ app.post("/api/v1/calls/group", requireSupabase, requireUser, async (req, res) =
       }))
     );
     if (notificationError) throw notificationError;
+    await sendCallPush(targets.map(target => target.id), "Incoming TingTring group call", callerName,
+      { call_id: call.id, call_type: "GROUP", room_name: roomName });
     const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
     token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
     res.status(201).json({ call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(), call_type: "GROUP" });
@@ -408,13 +462,17 @@ app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) =
       await supabaseAdmin.from("calls").delete().eq("id", call.id);
       throw participantError;
     }
-    await supabaseAdmin.from("notifications").insert({
+    const callerName = req.authUser.user_metadata?.display_name || "TingTring user";
+    const { error: notificationError } = await supabaseAdmin.from("notifications").insert({
       user_id: target.id,
       kind: "INCOMING_CALL",
       title: "Incoming TingTring call",
-      body: req.authUser.user_metadata?.display_name || "TingTring user",
+      body: callerName,
       data: { call_id: call.id, call_type: callType, room_name: roomName }
     });
+    if (notificationError) throw notificationError;
+    await sendCallPush([target.id], "Incoming TingTring call", callerName,
+      { call_id: call.id, call_type: callType, room_name: roomName });
     const token = new AccessToken(livekitKey, livekitSecret, { identity: req.authUser.id, ttl: "10m" });
     token.addGrant({ roomJoin: true, room: roomName, canPublish: true, canSubscribe: true });
     res.status(201).json({ call_id: call.id, room_name: roomName, livekit_url: livekitUrl, token: await token.toJwt(), call_type: callType });
