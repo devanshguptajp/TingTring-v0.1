@@ -392,7 +392,7 @@ app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res)
 app.get("/api/v1/owner/dashboard", requireSupabase, requireUser, requireOwner, async (_req, res) => {
   try {
     const [users, active, suspended, free, pro, premium, owners] = await Promise.all([
-      supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url,created_at,last_seen_at").neq("status", "DELETED").order("created_at", { ascending: false }).limit(50),
+      supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url,created_at,last_seen_at").neq("status", "DELETED").order("created_at", { ascending: false }).limit(1000),
       supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("status", "ACTIVE"),
       supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("status", "SUSPENDED"),
       supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "FREE").neq("status", "DELETED"),
@@ -472,15 +472,17 @@ app.get("/api/v1/owner/users/search", requireSupabase, requireUser, requireOwner
   try {
     const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
     if (q.length < 3) return res.status(400).json({ error: "INVALID_QUERY" });
-    const isId = /^[a-z0-9_]{3,30}$/.test(q);
+    const isId = /^\d{10}$/.test(q);
     const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q) && q.length <= 320;
-    const isUsernamePrefix = /^[a-z0-9_]{3,30}$/.test(q);
-    if (!isEmail && !isId && !isUsernamePrefix) return res.status(400).json({ error: "INVALID_QUERY" });
+    const isText = /^[a-z0-9_ .-]{3,80}$/.test(q);
+    if (!isEmail && !isId && !isText) return res.status(400).json({ error: "INVALID_QUERY" });
     let query = supabaseAdmin.from("profiles")
-      .select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url")
-      .limit(20);
+      .select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url,created_at,last_seen_at")
+      .neq("status", "DELETED")
+      .limit(50);
     if (isEmail) query = query.ilike("email", q);
-    else query = query.or("ttt_user_id.eq."+q+",username.ilike."+q+"%");
+    else if (isId) query = query.eq("ttt_user_id", q);
+    else query = query.or("username.ilike."+q+"%,display_name.ilike.%"+q+"%,ttt_user_id.eq."+q);
     const { data, error } = await query.order("created_at", { ascending: false });
     if (error) return res.status(500).json({ error: "OWNER_SEARCH_FAILED" });
     return res.status(200).json({ results: data || [] });
