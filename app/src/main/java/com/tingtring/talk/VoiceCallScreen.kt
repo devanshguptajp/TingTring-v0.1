@@ -1,6 +1,7 @@
 package com.tingtring.talk
 
 import android.Manifest
+import android.Manifest.permission.BLUETOOTH_CONNECT
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
@@ -67,6 +68,7 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
     var ending by rememberSaveable(session.callId) { mutableStateOf(false) }
     var error by rememberSaveable(session.callId) { mutableStateOf<String?>(null) }
     var networkAvailable by remember { mutableStateOf(hasInternet(connectivityManager)) }
+    var audioInterrupted by remember { mutableStateOf(false) }
     var elapsedSeconds by rememberSaveable(session.callId) { mutableStateOf(0L) }
     var route by rememberSaveable(session.callId) { mutableStateOf("Earpiece") }
     var availableRoutes by remember { mutableStateOf(listOf("Earpiece", "Speaker")) }
@@ -76,6 +78,9 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         permissionGranted = granted
         if (!granted) error = "Microphone permission is required to make a call."
+    }
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        refreshRoutes()
     }
 
     fun refreshRoutes() {
@@ -140,6 +145,13 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
                     caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
             }
         }
+        val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+            audioInterrupted = change == AudioManager.AUDIOFOCUS_LOSS ||
+                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
+                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+        }
+        @Suppress("DEPRECATION")
+        runCatching { audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) }
         val audioCallback = object : android.media.AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) { refreshRoutes() }
             override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) { refreshRoutes() }
@@ -149,6 +161,8 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
         onDispose {
             runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
             runCatching { audioManager.unregisterAudioDeviceCallback(audioCallback) }
+            @Suppress("DEPRECATION")
+            runCatching { audioManager.abandonAudioFocus(focusListener) }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) runCatching { audioManager.clearCommunicationDevice() }
             @Suppress("DEPRECATION")
             runCatching { audioManager.isSpeakerphoneOn = oldSpeaker }
@@ -159,6 +173,12 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
 
     LaunchedEffect(Unit) {
         if (!permissionGranted) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    LaunchedEffect(permissionGranted) {
+        if (permissionGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(context, BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            bluetoothPermissionLauncher.launch(BLUETOOTH_CONNECT)
+        }
     }
 
     LaunchedEffect(session.callId, permissionGranted) {
@@ -215,6 +235,10 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(if (connected) formatCallDuration(elapsedSeconds) else if (session.callType == "VIDEO") "Video call session" else "Voice call session",
                 style = MaterialTheme.typography.titleMedium)
+            if (audioInterrupted) {
+                Spacer(Modifier.height(12.dp))
+                Text("Audio is temporarily interrupted by another app or system call.", color = MaterialTheme.colorScheme.error)
+            }
             if (!networkAvailable) {
                 Spacer(Modifier.height(12.dp))
                 Text("Internet changed or dropped. TingTring will keep the call session open while the connection recovers.",
