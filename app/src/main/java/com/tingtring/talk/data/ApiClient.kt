@@ -236,7 +236,8 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
             r.value.optString("call_type", "GROUP"), true,
             maxDurationSeconds = if (r.value.isNull("max_duration_seconds")) null else r.value.optLong("max_duration_seconds", -1L).takeIf { it > 0L },
             ownerOverride = r.value.optBoolean("owner_override", false),
-            effectivePlan = r.value.optString("effective_plan", "FREE")
+            effectivePlan = r.value.optString("effective_plan", "FREE"),
+            callStatus = r.value.optString("call_status", "RINGING")
         ))
     }
 
