@@ -237,7 +237,7 @@ app.get("/api/v1/owner/count", requireSupabase, requireUser, requireOwner, async
   try {
     const { count, error } = await supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "OWNER");
     if (error) throw error;
-    res.status(200).json({ count: count || 0, max: 5 });
+    res.status(200).json({ owner_count: count || 0, owner_limit: 5 });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "OWNER_COUNT_FAILED" });
