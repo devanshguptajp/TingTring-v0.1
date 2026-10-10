@@ -20,7 +20,8 @@ data class TttUser(
     val status: String
 )
 data class Contact(val id: String, val user: TttUser)
-data class CallSession(val callId: String, val roomName: String, val livekitUrl: String, val token: String, val callType: String)
+data class CallSession(val callId: String, val roomName: String, val livekitUrl: String, val token: String, val callType: String, val isGroupCaller: Boolean = false)
+data class CallParticipant(val user: TttUser, val role: String, val status: String, val joinedAt: String?)
 data class ApiResult<T>(val value: T? = null, val error: String? = null)
 data class IncomingCall(val notificationId: String, val callId: String, val callerName: String, val callType: String)
 
@@ -210,7 +211,7 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return ApiResult(value = CallSession(
             r.value.optString("call_id"), r.value.optString("room_name"),
             r.value.optString("livekit_url"), r.value.optString("token"),
-            r.value.optString("call_type", "GROUP")
+            r.value.optString("call_type", "GROUP"), true
         ))
     }
 
@@ -232,6 +233,27 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
     suspend fun endCall(callId: String): ApiResult<Unit> {
         val r = request("POST", "/api/v1/calls/$callId/end", auth = true)
         return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
+    }
+
+    suspend fun leaveGroupCall(callId: String): ApiResult<Unit> {
+        val r = request("POST", "/api/v1/calls/$callId/leave", auth = true)
+        return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
+    }
+
+    suspend fun callParticipants(callId: String): ApiResult<List<CallParticipant>> {
+        val r = request("GET", "/api/v1/calls/$callId/participants", auth = true)
+        if (r.value == null) return ApiResult(error = r.error)
+        val a = r.value.optJSONArray("participants") ?: JSONArray()
+        return ApiResult(value = (0 until a.length()).mapNotNull { i ->
+            val p = a.optJSONObject(i) ?: return@mapNotNull null
+            val u = p.optJSONObject("user") ?: return@mapNotNull null
+            CallParticipant(
+                user = user(u),
+                role = p.optString("role", "PARTICIPANT"),
+                status = p.optString("status", "RINGING"),
+                joinedAt = p.optString("joined_at").takeIf { it.isNotBlank() && it != "null" }
+            )
+        })
     }
 
     suspend fun incomingCalls(): ApiResult<List<IncomingCall>> {
