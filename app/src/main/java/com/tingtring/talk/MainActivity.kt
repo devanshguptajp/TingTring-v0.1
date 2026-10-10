@@ -74,6 +74,13 @@ class MainActivity:ComponentActivity(){
 }
 
 @Composable private fun App(api:ApiClient,session:SessionStore){
+ val context = LocalContext.current
+ val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+ LaunchedEffect(Unit) {
+  if (android.os.Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+   notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+  }
+ }
  var user by remember{mutableStateOf<TttUser?>(null)};var activeCall by remember{mutableStateOf<CallSession?>(null)};var checking by remember{mutableStateOf(session.accessToken!=null)}
  var termsAccepted by rememberSaveable{mutableStateOf(api.termsAccepted())}
  LaunchedEffect(Unit){
@@ -328,7 +335,10 @@ class MainActivity:ComponentActivity(){
     Row(verticalAlignment=Alignment.CenterVertically){
      androidx.compose.material3.Checkbox(
       checked=c.user.tttUserId in selectedForGroup,
-      onCheckedChange={checked->selectedForGroup=if(checked)selectedForGroup+c.user.tttUserId else selectedForGroup-c.user.tttUserId}
+      onCheckedChange={checked->
+       if(checked && selectedForGroup.size>=7) error="Group calls support up to 7 invited contacts."
+       else {selectedForGroup=if(checked)selectedForGroup+c.user.tttUserId else selectedForGroup-c.user.tttUserId;error=null}
+      }
      )
      Box(Modifier.weight(1f)){
       UserRow(c.user,"Remove","Call",{scope.launch{val r=api.removeContact(c.id);error=r.error;if(r.error==null){contacts=api.contacts().value?:contacts;selectedForGroup=selectedForGroup-c.user.tttUserId}}},{scope.launch{val r=api.startCall(c.user.tttUserId);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}},{scope.launch{val r=api.startCall(c.user.tttUserId,video=true);error=r.error;r.value?.let{session->requestTelecomOutgoingCall(context,c.user,session);onStartCall(session)}}})
