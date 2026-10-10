@@ -105,6 +105,7 @@ class TttConnectionService : ConnectionService() {
         }
 
         override fun onDisconnect() {
+            TttConnectionRegistry.rejectIncoming(callId)
             TttConnectionRegistry.remove(callId, this)
             setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
             destroy()
