@@ -83,9 +83,6 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
         permissionGranted = granted
         if (!granted) error = "Microphone permission is required to make a call."
     }
-    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        refreshRoutes()
-    }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         cameraPermissionGranted = granted
         if (granted) scope.launch {
@@ -115,6 +112,10 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
         }
         availableRoutes = routes
         if (route !in routes) route = "Earpiece"
+    }
+
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        refreshRoutes()
     }
 
     fun applyRoute(selected: String) {
