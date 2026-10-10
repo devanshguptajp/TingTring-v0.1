@@ -23,7 +23,15 @@ data class TttUser(
     val lastSeenAt: String? = null
 )
 data class Contact(val id: String, val user: TttUser)
-data class CallSession(val callId: String, val roomName: String, val livekitUrl: String, val token: String, val callType: String, val isGroupCaller: Boolean = false)
+data class CallSession(
+    val callId: String, val roomName: String, val livekitUrl: String, val token: String, val callType: String,
+    val isGroupCaller: Boolean = false, val maxDurationSeconds: Long? = null,
+    val ownerOverride: Boolean = false, val effectivePlan: String = "FREE"
+)
+data class CallEntitlement(
+    val maxDurationSeconds: Long?, val ownerOverride: Boolean, val effectivePlan: String,
+    val maxParticipants: Int, val callStatus: String, val endedReason: String?, val elapsedSeconds: Long
+)
 data class CallParticipant(val user: TttUser, val role: String, val status: String, val joinedAt: String?)
 data class ApiResult<T>(val value: T? = null, val error: String? = null)
 data class OwnerDashboard(
@@ -209,7 +217,10 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return ApiResult(value = CallSession(
             r.value.optString("call_id"), r.value.optString("room_name"),
             r.value.optString("livekit_url"), r.value.optString("token"),
-            r.value.optString("call_type", "AUDIO")
+            r.value.optString("call_type", "AUDIO"),
+            maxDurationSeconds = if (r.value.isNull("max_duration_seconds")) null else r.value.optLong("max_duration_seconds", -1L).takeIf { it > 0L },
+            ownerOverride = r.value.optBoolean("owner_override", false),
+            effectivePlan = r.value.optString("effective_plan", "FREE")
         ))
     }
 
@@ -221,7 +232,10 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return ApiResult(value = CallSession(
             r.value.optString("call_id"), r.value.optString("room_name"),
             r.value.optString("livekit_url"), r.value.optString("token"),
-            r.value.optString("call_type", "GROUP"), true
+            r.value.optString("call_type", "GROUP"), true,
+            maxDurationSeconds = if (r.value.isNull("max_duration_seconds")) null else r.value.optLong("max_duration_seconds", -1L).takeIf { it > 0L },
+            ownerOverride = r.value.optBoolean("owner_override", false),
+            effectivePlan = r.value.optString("effective_plan", "FREE")
         ))
     }
 
@@ -231,7 +245,25 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return ApiResult(value = CallSession(
             r.value.optString("call_id"), r.value.optString("room_name"),
             r.value.optString("livekit_url"), r.value.optString("token"),
-            r.value.optString("call_type", "AUDIO")
+            r.value.optString("call_type", "AUDIO"),
+            maxDurationSeconds = if (r.value.isNull("max_duration_seconds")) null else r.value.optLong("max_duration_seconds", -1L).takeIf { it > 0L },
+            ownerOverride = r.value.optBoolean("owner_override", false),
+            effectivePlan = r.value.optString("effective_plan", "FREE")
+        ))
+    }
+
+    suspend fun callEntitlements(callId: String): ApiResult<CallEntitlement> {
+        val r = request("GET", "/api/v1/calls/$callId/entitlements", auth = true)
+        if (r.value == null) return ApiResult(error = r.error)
+        val j = r.value
+        return ApiResult(value = CallEntitlement(
+            maxDurationSeconds = if (j.isNull("max_duration_seconds")) null else j.optLong("max_duration_seconds", -1L).takeIf { it > 0L },
+            ownerOverride = j.optBoolean("owner_override", false),
+            effectivePlan = j.optString("effective_plan", "FREE"),
+            maxParticipants = j.optInt("max_participants", 4),
+            callStatus = j.optString("call_status", "UNKNOWN"),
+            endedReason = j.optString("ended_reason").takeIf { it.isNotBlank() && it != "null" },
+            elapsedSeconds = j.optLong("elapsed_seconds", 0L).coerceAtLeast(0L)
         ))
     }
 
