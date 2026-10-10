@@ -167,7 +167,7 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
             @Suppress("DEPRECATION")
             runCatching { audioManager.isSpeakerphoneOn = oldSpeaker }
             audioManager.mode = oldMode
-            runCatching { room.disconnect(); room.release() }
+            scope.launch { runCatching { room.disconnect(); room.release() } }
         }
     }
 
