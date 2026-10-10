@@ -76,6 +76,7 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
     var maxDurationSeconds by rememberSaveable(session.callId) { mutableStateOf(session.maxDurationSeconds) }
     var ownerOverride by rememberSaveable(session.callId) { mutableStateOf(session.ownerOverride) }
     var effectivePlan by rememberSaveable(session.callId) { mutableStateOf(session.effectivePlan) }
+    var callStatus by rememberSaveable(session.callId) { mutableStateOf(session.callStatus) }
     var participants by remember(session.callId) { mutableStateOf<List<CallParticipant>>(emptyList()) }
     var route by rememberSaveable(session.callId) { mutableStateOf("Earpiece") }
     var availableRoutes by remember { mutableStateOf(listOf("Earpiece", "Speaker")) }
@@ -223,8 +224,8 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
         }
     }
 
-    LaunchedEffect(connected) {
-        while (connected) {
+    LaunchedEffect(connected, callStatus) {
+        while (connected && callStatus == "ACCEPTED") {
             delay(1000)
             elapsedSeconds += 1
         }
@@ -261,6 +262,7 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
                 maxDurationSeconds = entitlement.maxDurationSeconds
                 ownerOverride = entitlement.ownerOverride
                 effectivePlan = entitlement.effectivePlan
+                callStatus = entitlement.callStatus
                 if (entitlement.elapsedSeconds > elapsedSeconds) elapsedSeconds = entitlement.elapsedSeconds
                 if (entitlement.callStatus == "ENDED" || entitlement.callStatus == "DECLINED") {
                     error = if (entitlement.endedReason == "PLAN_DURATION_LIMIT") {
@@ -276,9 +278,9 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
         }
     }
 
-    LaunchedEffect(connected, elapsedSeconds, maxDurationSeconds, ownerOverride, ending) {
+    LaunchedEffect(connected, callStatus, elapsedSeconds, maxDurationSeconds, ownerOverride, ending) {
         val limit = maxDurationSeconds
-        if (connected && !ownerOverride && limit != null && elapsedSeconds >= limit && !ending) {
+        if (connected && callStatus == "ACCEPTED" && !ownerOverride && limit != null && elapsedSeconds >= limit && !ending) {
             error = "The call's plan duration limit has been reached."
             endCall()
         }
