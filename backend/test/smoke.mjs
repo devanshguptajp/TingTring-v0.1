@@ -66,6 +66,25 @@ try {
   assert.equal((await api.json()).name, "TingTring Talk API");
   const missing = await fetch("http://127.0.0.1:3189/does-not-exist");
   assert.equal(missing.status, 404);
+  const groupCallWithoutSupabase = await fetch("http://127.0.0.1:3189/api/v1/calls/group", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer fake" },
+    body: JSON.stringify({ ttt_user_ids: ["1234567890", "0987654321"] })
+  });
+  assert.equal(groupCallWithoutSupabase.status, 503);
+  assert.equal((await groupCallWithoutSupabase.json()).error, "SUPABASE_NOT_CONFIGURED");
+  for (const path of [
+    "/api/v1/calls/00000000-0000-0000-0000-000000000001/participants",
+    "/api/v1/calls/00000000-0000-0000-0000-000000000001/leave",
+    "/api/v1/calls/00000000-0000-0000-0000-000000000001/decline",
+    "/api/v1/calls/00000000-0000-0000-0000-000000000001/end"
+  ]) {
+    const method = path.endsWith("/participants") ? "GET" : "POST";
+    const response = await fetch("http://127.0.0.1:3189" + path, {
+      method, headers: { Authorization: "Bearer fake" }
+    });
+    assert.equal(response.status, 503, "Protected call route must fail closed without Supabase: " + path);
+    assert.equal((await response.json()).error, "SUPABASE_NOT_CONFIGURED");
+  }
   const ownerCountWithoutSupabase = await fetch("http://127.0.0.1:3189/api/v1/owner/count", { headers: { Authorization: "Bearer fake" } });
   assert.equal(ownerCountWithoutSupabase.status, 503);
   assert.equal((await ownerCountWithoutSupabase.json()).error, "SUPABASE_NOT_CONFIGURED");
@@ -75,4 +94,4 @@ try {
   child.kill("SIGTERM");
   await sleep(100);
 }
-console.log("Phase 9 backend smoke tests passed.");
+console.log("Backend smoke tests passed (health, auth validation, protected call routes, payload limits).");
