@@ -193,11 +193,47 @@ class MainActivity:ComponentActivity(){
 @Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
  var selected by rememberSaveable{mutableIntStateOf(0)}
  var incoming by remember{mutableStateOf<IncomingCall?>(null)}
+ var requestedCallIds by remember{mutableStateOf(setOf<String>())}
  val scope=rememberCoroutineScope()
+ val context=LocalContext.current
  LaunchedEffect(Unit){
   while(true){
    val r=api.incomingCalls()
-   if(incoming==null) incoming=r.value?.firstOrNull()
+   val next=r.value?.firstOrNull{it.callId !in requestedCallIds}
+   if(next!=null){
+    requestedCallIds=requestedCallIds+next.callId
+    val component=ComponentName(context,com.tingtring.talk.telecom.TttConnectionService::class.java)
+    val handle=PhoneAccountHandle(component,"tingtring_talk")
+    com.tingtring.talk.telecom.TttConnectionRegistry.setIncomingActions(
+     next.callId,
+     onAnswer={
+      scope.launch{
+       val accepted=api.acceptCall(next.callId)
+       api.markNotificationRead(next.notificationId)
+       if(accepted.value!=null) onStartCall(accepted.value) else incoming=next
+      }
+     },
+     onReject={
+      scope.launch{
+       api.declineCall(next.callId)
+       api.markNotificationRead(next.notificationId)
+      }
+     }
+    )
+    val added=runCatching{
+     val extras=Bundle().apply{
+      putString("ttt_call_id",next.callId)
+      putString("notification_id",next.notificationId)
+      putString("display_name",next.callerName)
+      putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS,Uri.parse("ttt:incoming"))
+     }
+     context.getSystemService(TelecomManager::class.java).addNewIncomingCall(handle,extras)
+    }
+    if(added.isFailure){
+     com.tingtring.talk.telecom.TttConnectionRegistry.setIncomingActions(next.callId,{}, {})
+     incoming=next
+    }
+   }
    delay(2500)
   }
  }
