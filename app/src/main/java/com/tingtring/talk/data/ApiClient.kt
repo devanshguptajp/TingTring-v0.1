@@ -202,6 +202,18 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         ))
     }
 
+    suspend fun startGroupCall(tttUserIds: List<String>): ApiResult<CallSession> {
+        val ids = JSONArray()
+        tttUserIds.forEach { ids.put(it) }
+        val r = request("POST", "/api/v1/calls/group", JSONObject().apply { put("ttt_user_ids", ids) }, auth = true)
+        if (r.value == null) return ApiResult(error = r.error)
+        return ApiResult(value = CallSession(
+            r.value.optString("call_id"), r.value.optString("room_name"),
+            r.value.optString("livekit_url"), r.value.optString("token"),
+            r.value.optString("call_type", "GROUP")
+        ))
+    }
+
     suspend fun acceptCall(callId: String): ApiResult<CallSession> {
         val r = request("POST", "/api/v1/calls/$callId/accept", auth = true)
         if (r.value == null) return ApiResult(error = r.error)
