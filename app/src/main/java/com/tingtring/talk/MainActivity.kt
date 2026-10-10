@@ -261,7 +261,7 @@ class MainActivity:ComponentActivity(){
    if(user.plan=="OWNER") NavigationBarItem(selected==3,{selected=3},{Icon(Icons.Default.Settings,null)},label={Text("Owner")})
   }}){p->when(selected){
    0->Home(user,Modifier.padding(p))
-   1->Contacts(api,onStartCall,true,Modifier.padding(p))
+   1->Contacts(api,onStartCall,true,Modifier.padding(p),user.plan)
    2->Profile(api,user,onUserUpdated,onLogout,Modifier.padding(p))
    3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onUserUpdated,onLogout,Modifier.padding(p))
   }}
@@ -295,7 +295,7 @@ class MainActivity:ComponentActivity(){
  Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp)){Column(Modifier.padding(20.dp)){Text("Calling is next",style=MaterialTheme.typography.titleLarge);Text("Your identity, contacts and account are ready for the calling system.")}}
 }
 
-@Composable private fun Contacts(api:ApiClient,onStartCall:(CallSession)->Unit,vanyaAnimationEnabled:Boolean,modifier:Modifier=Modifier){
+@Composable private fun Contacts(api:ApiClient,onStartCall:(CallSession)->Unit,vanyaAnimationEnabled:Boolean,modifier:Modifier=Modifier,currentPlan:String="FREE"){
  var query by rememberSaveable{mutableStateOf("")}
  var results by remember{mutableStateOf<List<TttUser>>(emptyList())}
  var contacts by remember{mutableStateOf<List<Contact>>(emptyList())}
@@ -336,7 +336,14 @@ class MainActivity:ComponentActivity(){
      androidx.compose.material3.Checkbox(
       checked=c.user.tttUserId in selectedForGroup,
       onCheckedChange={checked->
-       if(checked && selectedForGroup.size>=7) error="Group calls support up to 7 invited contacts."
+       val ownerAlreadySelected = contacts.any { it.user.tttUserId in selectedForGroup && it.user.plan == "OWNER" && it.user.username == "dev17112012" }
+       val thisIsOverrideOwner = c.user.plan == "OWNER" && c.user.username == "dev17112012"
+       val maxInvites = when {
+        currentPlan == "OWNER" || currentPlan == "PREMIUM" || ownerAlreadySelected || thisIsOverrideOwner -> 24
+        currentPlan == "PRO" -> 9
+        else -> 3
+       }
+       if(checked && selectedForGroup.size>=maxInvites) error="Your current group-call limit is " + (maxInvites + 1) + " participants, including you."
        else {selectedForGroup=if(checked)selectedForGroup+c.user.tttUserId else selectedForGroup-c.user.tttUserId;error=null}
       }
      )
