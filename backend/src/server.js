@@ -582,6 +582,15 @@ app.delete("/api/v1/auth/account", requireSupabase, requireUser, async (req, res
   } catch (error) { console.error(error); res.status(500).json({ error: "ACCOUNT_DELETE_FAILED" }); }
 });
 
-app.use((err, _req, res, _next) => { console.error(err); res.status(500).json({ error: "INTERNAL_SERVER_ERROR" }); });
+app.use((err, _req, res, _next) => {
+  if (err?.type === "entity.too.large" || err?.status === 413) {
+    return res.status(413).json({ error: "REQUEST_BODY_TOO_LARGE" });
+  }
+  if (err?.type === "entity.parse.failed" || err?.status === 400) {
+    return res.status(400).json({ error: "INVALID_JSON" });
+  }
+  console.error(err);
+  return res.status(500).json({ error: "INTERNAL_SERVER_ERROR" });
+});
 app.use((_req, res) => res.status(404).json({ error: "NOT_FOUND" }));
 app.listen(port, "0.0.0.0", () => console.log("TingTring Talk backend listening on port " + port));
