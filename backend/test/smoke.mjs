@@ -86,12 +86,13 @@ try {
     assert.equal((await response.json()).error, "SUPABASE_NOT_CONFIGURED");
   }
   for (const path of [
+    "/api/v1/owner/bootstrap",
     "/api/v1/owner/dashboard",
     "/api/v1/owner/users/search?q=devansh",
     "/api/v1/owner/users/00000000-0000-0000-0000-000000000001/plan",
     "/api/v1/owner/users/00000000-0000-0000-0000-000000000001/status"
   ]) {
-    const method = path.endsWith("/plan") || path.endsWith("/status") ? "PATCH" : "GET";
+    const method = path.endsWith("/plan") || path.endsWith("/status") ? "PATCH" : path.endsWith("/bootstrap") ? "POST" : "GET";
     const response = await fetch("http://127.0.0.1:3189" + path, {
       method, headers: { Authorization: "Bearer fake", "Content-Type": "application/json" },
       body: method === "PATCH" ? JSON.stringify({ plan: "PRO", status: "SUSPENDED" }) : undefined
