@@ -303,6 +303,12 @@ class ApiClient(private val baseUrl: String, private val session: SessionStore) 
         return if (r.error == null) ApiResult(Unit) else ApiResult(error = r.error)
     }
 
+    suspend fun bootstrapOwner(): ApiResult<TttUser> {
+        val r = request("POST", "/api/v1/owner/bootstrap", auth = true)
+        if (r.value == null) return ApiResult(error = r.error)
+        return me()
+    }
+
     suspend fun ownerDashboard(): ApiResult<OwnerDashboard> {
         val r = request("GET", "/api/v1/owner/dashboard", auth = true)
         if (r.value == null) return ApiResult(error = r.error)
