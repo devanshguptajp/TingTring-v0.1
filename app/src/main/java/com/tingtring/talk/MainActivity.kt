@@ -330,39 +330,4 @@ class MainActivity:ComponentActivity(){
 }
 
 
-@Composable private fun CallScreen(api:ApiClient,session:CallSession,onEnded:()->Unit){
- val context=LocalContext.current
- var connected by remember{mutableStateOf(false)}
- var muted by remember{mutableStateOf(false)}
- var error by remember{mutableStateOf<String?>(null)}
- var permissionGranted by remember{mutableStateOf(androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)}
- val scope=rememberCoroutineScope()
- val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){permissionGranted=it;if(!it)error="Microphone permission is required"}
- val room=remember{LiveKit.create(appContext=context.applicationContext)}
- DisposableEffect(Unit){
-  onDispose{runCatching{room.disconnect();room.release()}}
- }
- LaunchedEffect(Unit){
-  if(!permissionGranted) permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
- }
- LaunchedEffect(session.callId,permissionGranted){
-  if(!permissionGranted)return@LaunchedEffect
-  try{
-   room.connect(session.livekitUrl,session.token)
-   if(!room.localParticipant.setMicrophoneEnabled(true)) throw IllegalStateException("MICROPHONE_ENABLE_FAILED")
-   connected=true
-   com.tingtring.talk.telecom.TttConnectionRegistry.setActive(session.callId)
-  }catch(t:Throwable){error=t.message?:"CALL_CONNECTION_FAILED"}
- }
- Column(Modifier.fillMaxSize().padding(28.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center){
-  Text("TingTring Call",style=MaterialTheme.typography.headlineLarge)
-  Spacer(Modifier.height(12.dp))
-  Text(if(error!=null)"Call failed"else if(connected)"Connected"else"Connecting…")
-  error?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-  Spacer(Modifier.height(28.dp))
-  Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
-   OutlinedButton(enabled=connected,onClick={scope.launch{muted=!muted;room.localParticipant.setMicrophoneEnabled(!muted)}}){Text(if(muted)"Unmute"else"Mute")}
-   Button(onClick={scope.launch{api.endCall(session.callId);room.disconnect();com.tingtring.talk.telecom.TttConnectionRegistry.disconnect(session.callId);onEnded()}}){Text("End call")}
-  }
- }
-}
+@Composable private fun CallScreen(api:ApiClient,session:CallSession,onEnded:()->Unit) = VoiceCallScreen(api,session,onEnded)
