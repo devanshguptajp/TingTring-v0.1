@@ -65,6 +65,8 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
     val scope = rememberCoroutineScope()
     var connected by rememberSaveable(session.callId) { mutableStateOf(false) }
     var muted by rememberSaveable(session.callId) { mutableStateOf(false) }
+    var cameraEnabled by rememberSaveable(session.callId) { mutableStateOf(false) }
+    var cameraPermissionGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     var ending by rememberSaveable(session.callId) { mutableStateOf(false) }
     var error by rememberSaveable(session.callId) { mutableStateOf<String?>(null) }
     var networkAvailable by remember { mutableStateOf(hasInternet(connectivityManager)) }
@@ -81,6 +83,14 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
     }
     val bluetoothPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         refreshRoutes()
+    }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        cameraPermissionGranted = granted
+        if (granted) scope.launch {
+            val enabled = runCatching { room.localParticipant.setCameraEnabled(true) }.getOrDefault(false)
+            cameraEnabled = enabled
+            if (!enabled) error = "Camera could not start. Check camera access and try again."
+        } else error = "Camera permission is required for video calls."
     }
 
     fun refreshRoutes() {
@@ -281,6 +291,16 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
             }
             Spacer(Modifier.height(28.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (session.callType == "VIDEO") {
+                    OutlinedButton(enabled = connected && !ending, onClick = {
+                        if (!cameraPermissionGranted) cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        else scope.launch {
+                            val next = !cameraEnabled
+                            val enabled = runCatching { room.localParticipant.setCameraEnabled(next) }.getOrDefault(false)
+                            if (enabled) cameraEnabled = next else error = "Could not change camera state."
+                        }
+                    }) { Text(if (cameraEnabled) "Camera off" else "Camera on") }
+                }
                 OutlinedButton(enabled = connected && !ending, onClick = {
                     scope.launch {
                         val nextMuted = !muted
@@ -291,6 +311,10 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
                 OutlinedButton(enabled = !ending && availableRoutes.size > 1, onClick = {
                     applyRoute(availableRoutes[(routeIndex + 1) % availableRoutes.size])
                 }) { Text("Audio: $route") }
+            }
+            if (session.callType == "VIDEO") {
+                Spacer(Modifier.height(8.dp))
+                Text(if (cameraEnabled) "Camera is publishing to the call room" else "Your camera is off until you enable it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(12.dp))
             Button(
