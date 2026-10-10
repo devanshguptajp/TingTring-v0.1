@@ -73,6 +73,9 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
     var networkAvailable by remember { mutableStateOf(hasInternet(connectivityManager)) }
     var audioInterrupted by remember { mutableStateOf(false) }
     var elapsedSeconds by rememberSaveable(session.callId) { mutableStateOf(0L) }
+    var maxDurationSeconds by rememberSaveable(session.callId) { mutableStateOf(session.maxDurationSeconds) }
+    var ownerOverride by rememberSaveable(session.callId) { mutableStateOf(session.ownerOverride) }
+    var effectivePlan by rememberSaveable(session.callId) { mutableStateOf(session.effectivePlan) }
     var participants by remember(session.callId) { mutableStateOf<List<CallParticipant>>(emptyList()) }
     var route by rememberSaveable(session.callId) { mutableStateOf("Earpiece") }
     var availableRoutes by remember { mutableStateOf(listOf("Earpiece", "Speaker")) }
@@ -250,6 +253,37 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
         }
     }
 
+    LaunchedEffect(session.callId, connected) {
+        if (!connected) return@LaunchedEffect
+        while (true) {
+            val result = api.callEntitlements(session.callId)
+            result.value?.let { entitlement ->
+                maxDurationSeconds = entitlement.maxDurationSeconds
+                ownerOverride = entitlement.ownerOverride
+                effectivePlan = entitlement.effectivePlan
+                if (entitlement.elapsedSeconds > elapsedSeconds) elapsedSeconds = entitlement.elapsedSeconds
+                if (entitlement.callStatus == "ENDED" || entitlement.callStatus == "DECLINED") {
+                    error = if (entitlement.endedReason == "PLAN_DURATION_LIMIT") {
+                        "The call's plan duration limit has been reached."
+                    } else {
+                        "This call has ended."
+                    }
+                    endCall()
+                    return@LaunchedEffect
+                }
+            }
+            delay(5000)
+        }
+    }
+
+    LaunchedEffect(connected, elapsedSeconds, maxDurationSeconds, ownerOverride, ending) {
+        val limit = maxDurationSeconds
+        if (connected && !ownerOverride && limit != null && elapsedSeconds >= limit && !ending) {
+            error = "The call's plan duration limit has been reached."
+            endCall()
+        }
+    }
+
     val routeIndex = availableRoutes.indexOf(route).coerceAtLeast(0)
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
@@ -264,6 +298,18 @@ fun VoiceCallScreen(api: ApiClient, session: CallSession, onEnded: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text(if (connected) formatCallDuration(elapsedSeconds) else if (session.callType == "VIDEO") "Video call session" else "Voice call session",
                 style = MaterialTheme.typography.titleMedium)
+            if (connected) {
+                val limit = maxDurationSeconds
+                Text(
+                    when {
+                        ownerOverride -> "Owner override active · Unlimited duration"
+                        limit == null -> "$effectivePlan plan · Unlimited duration"
+                        else -> "$effectivePlan plan · Limit " + formatCallDuration(limit)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             if (session.callType == "GROUP") {
                 Spacer(Modifier.height(10.dp))
                 Text("Group participants", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
