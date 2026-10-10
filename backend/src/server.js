@@ -134,7 +134,8 @@ async function enforceCallDurationLimits() {
     const livekitSecret = process.env.LIVEKIT_API_SECRET;
     if (livekitUrl && livekitKey && livekitSecret && call.livekit_room_name) {
       try {
-        await new RoomServiceClient(livekitUrl, livekitKey, livekitSecret).deleteRoom(call.livekit_room_name);
+        const roomServiceUrl = livekitUrl.replace(/^wss:/i, "https:").replace(/^ws:/i, "http:");
+        await new RoomServiceClient(roomServiceUrl, livekitKey, livekitSecret).deleteRoom(call.livekit_room_name);
       } catch (roomError) {
         console.error("Could not close LiveKit room after plan limit:", roomError?.message || roomError);
       }
