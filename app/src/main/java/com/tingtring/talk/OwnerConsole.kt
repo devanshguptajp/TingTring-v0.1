@@ -8,9 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
 import com.tingtring.talk.data.ApiClient
 import com.tingtring.talk.data.TttUser
 import kotlinx.coroutines.launch
@@ -18,9 +17,10 @@ import kotlinx.coroutines.launch
 @Composable
 fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
     var query by rememberSaveable { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<TttUser>>(emptyList()) }
+    var users by remember { mutableStateOf<List<TttUser>>(emptyList()) }
     var selected by remember { mutableStateOf<TttUser?>(null) }
     var newId by rememberSaveable { mutableStateOf("") }
+    var counts by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
@@ -29,75 +29,182 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
     var ownerConfirmStep by rememberSaveable { mutableIntStateOf(0) }
     var ownerPassword by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { ownerCount = api.ownerCount().value }
+
+    fun refresh() {
+        scope.launch {
+            loading = true
+            val r = api.ownerDashboard()
+            if (r.value != null) {
+                users = r.value.users
+                counts = mapOf("Total" to r.value.total, "Active" to r.value.active, "Suspended" to r.value.suspended,
+                    "Free" to r.value.free, "Pro" to r.value.pro, "Premium" to r.value.premium, "Owners" to r.value.owners)
+            } else error = r.error
+            val owners = api.ownerCount()
+            ownerCount = owners.value
+            loading = false
+        }
+    }
+    LaunchedEffect(Unit) { refresh() }
 
     Column(modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Owner Console", style = MaterialTheme.typography.headlineLarge)
-        Text("Server-authorized administration", style = MaterialTheme.typography.bodyMedium)
-        ownerCount?.let { (count, limit) -> Text("Active owners: $count / $limit", style = MaterialTheme.typography.labelLarge) }
-        com.tingtring.talk.ui.VanyaCorrectionField(value = query, onValueChange = { query = it }, label = "Search username, email, or TingTring ID", modifier = Modifier.fillMaxWidth())
-        Button(enabled = query.trim().length >= 3 && !loading, onClick = {
-            scope.launch {
-                loading = true; error = null; message = null
-                val r = api.ownerSearchUsers(query)
-                results = r.value ?: emptyList()
-                error = r.error
-                loading = false
+        Text("Owner Console", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Text("Private user management • Server-authorized", style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { refresh() }, enabled = !loading, modifier = Modifier.weight(1f)) { Text(if (loading) "Loading…" else "Refresh") }
+            ownerCount?.let { (count, limit) -> AssistChip(onClick = {}, label = { Text("Owners $count/$limit") }) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf("Total", "Active", "Suspended").forEach { label ->
+                Card(Modifier.weight(1f)) { Column(Modifier.padding(10.dp)) {
+                    Text(label, style = MaterialTheme.typography.labelSmall)
+                    Text((counts[label] ?: 0).toString(), style = MaterialTheme.typography.headlineSmall)
+                } }
             }
-        }, modifier = Modifier.fillMaxWidth()) { Text(if (loading) "Searching…" else "Search users") }
-
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf("Free", "Pro", "Premium").forEach { label ->
+                Card(Modifier.weight(1f)) { Column(Modifier.padding(10.dp)) {
+                    Text(label, style = MaterialTheme.typography.labelSmall)
+                    Text((counts[label] ?: 0).toString(), style = MaterialTheme.typography.titleLarge)
+                } }
+            }
+        }
+        com.tingtring.talk.ui.VanyaCorrectionField(
+            value = query, onValueChange = { query = it },
+            label = "Search username, email, or TingTring ID", modifier = Modifier.fillMaxWidth()
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(enabled = query.trim().length >= 3 && !loading, onClick = {
+                scope.launch {
+                    loading = true; error = null; message = null
+                    val r = api.ownerSearchUsers(query.trim())
+                    if (r.value != null) users = r.value else error = r.error
+                    selected = null
+                    loading = false
+                }
+            }, modifier = Modifier.weight(1f)) { Text("Search") }
+            OutlinedButton(enabled = !loading, onClick = { query = ""; refresh() }) { Text("All users") }
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
 
         selected?.let { user ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(user.displayName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text("@${user.username}")
-                    Text("Current ID: ${user.tttUserId}")
-                    Text("Plan: ${user.plan}")
-                    Text("Status: ${user.status}")
-                    com.tingtring.talk.ui.VanyaCorrectionField(value = newId, onValueChange = { newId = it.lowercase() }, label = "New TingTring ID", keyboardType = KeyboardType.Number, modifier = Modifier.fillMaxWidth())
-                    OutlinedButton(onClick={ownerTarget=user;ownerConfirmStep=1;ownerPassword=""},enabled=user.plan!="OWNER"&&!loading){Text("Grant Owner access")}
-                    Button(enabled = newId.matches(Regex("\\d{10}")) && newId != user.tttUserId && !loading, onClick = {
-                        scope.launch {
-                            loading = true; error = null; message = null
-                            val r = api.ownerChangeTttId(user.id, newId)
-                            if (r.value != null) {
-                                message = "ID changed from ${r.value.first} to ${r.value.second}. Existing contacts follow the account."
-                                selected = user.copy(tttUserId = r.value.second)
-                                newId = ""
-                                results = results.map { if (it.id == user.id) it.copy(tttUserId = r.value.second) else it }
-                            } else error = r.error
-                            loading = false
+                    Text("User details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(user.displayName, style = MaterialTheme.typography.titleMedium)
+                    Text("@${user.username} • TTT ID: ${user.tttUserId}")
+                    Text("Email: ${user.email ?: "Not available"}")
+                    Text("Plan: ${user.plan} • Status: ${user.status}")
+                    Text("Joined: ${user.createdAt ?: "Unknown"}", style = MaterialTheme.typography.bodySmall)
+                    Text("Last seen: ${user.lastSeenAt ?: "Not recorded"}", style = MaterialTheme.typography.bodySmall)
+                    if (user.plan != "OWNER") {
+                        Text("Set subscription", style = MaterialTheme.typography.titleSmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                            listOf("FREE", "PRO", "PREMIUM").forEach { plan ->
+                                OutlinedButton(enabled = !loading && user.plan != plan, onClick = {
+                                    scope.launch {
+                                        loading = true; error = null; message = null
+                                        val r = api.ownerSetPlan(user.id, plan)
+                                        if (r.error == null) {
+                                            message = "Plan updated to $plan."
+                                            selected = user.copy(plan = plan)
+                                            users = users.map { if (it.id == user.id) it.copy(plan = plan) else it }
+                                            refresh()
+                                        } else error = r.error
+                                        loading = false
+                                    }
+                                }, modifier = Modifier.weight(1f)) { Text(plan) }
+                            }
                         }
-                    }, modifier = Modifier.fillMaxWidth()) { Text("Change TingTring ID") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(enabled = !loading && user.status != "SUSPENDED", onClick = {
+                                scope.launch {
+                                    loading = true; error = null
+                                    val r = api.ownerSetStatus(user.id, "SUSPENDED")
+                                    if (r.error == null) { message = "Account suspended."; selected = user.copy(status = "SUSPENDED"); refresh() } else error = r.error
+                                    loading = false
+                                }
+                            }, modifier = Modifier.weight(1f)) { Text("Suspend") }
+                            OutlinedButton(enabled = !loading && user.status != "ACTIVE", onClick = {
+                                scope.launch {
+                                    loading = true; error = null
+                                    val r = api.ownerSetStatus(user.id, "ACTIVE")
+                                    if (r.error == null) { message = "Account reactivated."; selected = user.copy(status = "ACTIVE"); refresh() } else error = r.error
+                                    loading = false
+                                }
+                            }, modifier = Modifier.weight(1f)) { Text("Reactivate") }
+                        }
+                        com.tingtring.talk.ui.VanyaCorrectionField(
+                            value = newId, onValueChange = { newId = it.filter(Char::isDigit).take(10) },
+                            label = "New 10-digit TTT ID", keyboardType = KeyboardType.Number, modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(enabled = newId.matches(Regex("\\d{10}")) && newId != user.tttUserId && !loading, onClick = {
+                            scope.launch {
+                                loading = true; error = null; message = null
+                                val r = api.ownerChangeTttId(user.id, newId)
+                                if (r.value != null) {
+                                    message = "ID changed. Existing contacts follow the account."
+                                    selected = user.copy(tttUserId = r.value.second)
+                                    newId = ""
+                                    refresh()
+                                } else error = r.error
+                                loading = false
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Change TTT ID") }
+                        OutlinedButton(onClick = { ownerTarget = user; ownerConfirmStep = 1; ownerPassword = "" },
+                            enabled = !loading, modifier = Modifier.fillMaxWidth()) { Text("Grant Owner access…") }
+                    } else {
+                        Text("Owner account protected from plan and status changes.", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
 
-        ownerTarget?.let { target ->
-            AlertDialog(onDismissRequest={ownerTarget=null;ownerConfirmStep=0;ownerPassword=""},title={Text("Grant Owner access")},
-                text={if(ownerConfirmStep<10) Text("Confirmation " + ownerConfirmStep + " of 10. You are explicitly authorizing Owner access.") else Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
-                    Text("Final step: enter your current account password.")
-                    Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){repeat(8){index->OutlinedTextField(value=ownerPassword.getOrNull(index)?.toString()?:"",onValueChange={v->val d=v.filter{it.isDigit()}.takeLast(1);val chars=ownerPassword.toMutableList();while(chars.size<=index)chars.add(" "[0]);if(d.isNotEmpty())chars[index]=d[0];ownerPassword=chars.joinToString("").trimEnd()},modifier=Modifier.width(42.dp),singleLine=true,visualTransformation=PasswordVisualTransformation(),keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=KeyboardType.Number))}}
-                    Text("The password is verified server-side and is not stored.")
-                }},
-                confirmButton={Button(enabled=!loading&&(ownerConfirmStep<10||ownerPassword.isNotBlank()),onClick={if(ownerConfirmStep<10)ownerConfirmStep++ else scope.launch{loading=true;val r=api.grantOwner(target.id,ownerPassword);if(r.error==null){message="Owner access granted.";selected=target.copy(plan="OWNER");results=results.map{if(it.id==target.id)it.copy(plan="OWNER")else it};ownerTarget=null;ownerConfirmStep=0;ownerPassword=""}else error=r.error;loading=false}}){Text(if(ownerConfirmStep<10)"I confirm" else "Grant Owner")}},
-                dismissButton={TextButton(onClick={ownerTarget=null;ownerConfirmStep=0;ownerPassword=""}){Text("Cancel")}})
-        }
-        Text("Results", style = MaterialTheme.typography.titleLarge)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(results) { user ->
+        Text("Users (${users.size} shown)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f, fill = false)) {
+            items(users, key = { it.id }) { user ->
                 OutlinedCard(onClick = { selected = user; newId = ""; error = null; message = null }, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(user.displayName, fontWeight = FontWeight.SemiBold)
                         Text("@${user.username} • ${user.tttUserId}")
-                        Text(user.plan, style = MaterialTheme.typography.bodySmall)
+                        Text("${user.plan} • ${user.status}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
-            if (results.isEmpty()) item { Text("No users found yet.") }
+            if (users.isEmpty()) item { Text(if (loading) "Loading users…" else "No users loaded. Tap Refresh.") }
         }
+    }
+
+    ownerTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { ownerTarget = null; ownerConfirmStep = 0; ownerPassword = "" },
+            title = { Text("Grant Owner access") },
+            text = {
+                if (ownerConfirmStep < 10) Text("Confirmation $ownerConfirmStep of 10. You are explicitly authorizing Owner access for @${target.username}.")
+                else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Final step: enter your current account password.")
+                    OutlinedTextField(value = ownerPassword, onValueChange = { ownerPassword = it.take(128) },
+                        label = { Text("Current password") }, singleLine = true)
+                    Text("Password is verified server-side and is not stored.")
+                }
+            },
+            confirmButton = {
+                Button(enabled = !loading && (ownerConfirmStep < 10 || ownerPassword.isNotBlank()), onClick = {
+                    if (ownerConfirmStep < 10) ownerConfirmStep++ else scope.launch {
+                        loading = true
+                        val r = api.grantOwner(target.id, ownerPassword)
+                        if (r.error == null) {
+                            message = "Owner access granted."
+                            selected = target.copy(plan = "OWNER")
+                            ownerTarget = null; ownerConfirmStep = 0; ownerPassword = ""
+                            refresh()
+                        } else error = r.error
+                        loading = false
+                    }
+                }) { Text(if (ownerConfirmStep < 10) "I confirm" else "Grant Owner") }
+            },
+            dismissButton = { TextButton(onClick = { ownerTarget = null; ownerConfirmStep = 0; ownerPassword = "" }) { Text("Cancel") } }
+        )
     }
 }
