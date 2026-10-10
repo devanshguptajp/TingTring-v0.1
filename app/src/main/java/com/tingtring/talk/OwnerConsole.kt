@@ -35,7 +35,7 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
         Text("Owner Console", style = MaterialTheme.typography.headlineLarge)
         Text("Server-authorized administration", style = MaterialTheme.typography.bodyMedium)
         ownerCount?.let { (count, limit) -> Text("Active owners: $count / $limit", style = MaterialTheme.typography.labelLarge) }
-        OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Search username, email, or TingTring ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        com.tingtring.talk.ui.VanyaCorrectionField(value = query, onValueChange = { query = it }, label = "Search username, email, or TingTring ID", modifier = Modifier.fillMaxWidth())
         Button(enabled = query.trim().length >= 3 && !loading, onClick = {
             scope.launch {
                 loading = true; error = null; message = null
@@ -57,7 +57,7 @@ fun OwnerConsole(api: ApiClient, modifier: Modifier = Modifier) {
                     Text("Current ID: ${user.tttUserId}")
                     Text("Plan: ${user.plan}")
                     Text("Status: ${user.status}")
-                    OutlinedTextField(value = newId, onValueChange = { newId = it.lowercase() }, label = { Text("New TingTring ID") }, supportingText = { Text("Exactly 10 digits") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    com.tingtring.talk.ui.VanyaCorrectionField(value = newId, onValueChange = { newId = it.lowercase() }, label = "New TingTring ID", keyboardType = KeyboardType.Number, modifier = Modifier.fillMaxWidth())
                     OutlinedButton(onClick={ownerTarget=user;ownerConfirmStep=1;ownerPassword=""},enabled=user.plan!="OWNER"&&!loading){Text("Grant Owner access")}
                     Button(enabled = newId.matches(Regex("\\d{10}")) && newId != user.tttUserId && !loading, onClick = {
                         scope.launch {
