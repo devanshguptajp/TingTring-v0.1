@@ -125,6 +125,33 @@ app.get("/health", (_req, res) => res.status(200).json({
   environment: process.env.NODE_ENV || "development", supabaseConfigured
 }));
 app.get("/api/v1", (_req, res) => res.status(200).json({ name: "TingTring Talk API", version: "v1", status: "online" }));
+app.post("/api/v1/owner/bootstrap", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const configuredEmail = normalizeEmail(process.env.INITIAL_OWNER_EMAIL || "");
+    const signedInEmail = normalizeEmail(req.authUser.email || "");
+    if (!configuredEmail) return res.status(503).json({ error: "OWNER_BOOTSTRAP_NOT_CONFIGURED" });
+    if (!signedInEmail || signedInEmail !== configuredEmail) return res.status(403).json({ error: "OWNER_BOOTSTRAP_EMAIL_MISMATCH" });
+    if (!req.authUser.email_confirmed_at) return res.status(403).json({ error: "OWNER_EMAIL_NOT_VERIFIED" });
+    const profile = await getProfile(supabaseAdmin, req.authUser.id);
+    if (!profile || profile.status !== "ACTIVE") return res.status(403).json({ error: "ACCOUNT_UNAVAILABLE" });
+    const { count, error: countError } = await supabaseAdmin.from("profiles")
+      .select("id", { count: "exact", head: true }).eq("plan", "OWNER");
+    if (countError) throw countError;
+    if ((count || 0) > 0) return res.status(409).json({ error: "OWNER_ALREADY_INITIALIZED" });
+    const { data: granted, error: grantError } = await supabaseAdmin.rpc("grant_owner_role", { target_user_id: req.authUser.id });
+    if (grantError) throw grantError;
+    if (!granted) return res.status(409).json({ error: "OWNER_BOOTSTRAP_FAILED" });
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_user_id: req.authUser.id, action: "INITIAL_OWNER_BOOTSTRAPPED",
+      target_type: "PROFILE", target_id: req.authUser.id, metadata: { email: signedInEmail }
+    });
+    res.status(200).json({ status: "OWNER_BOOTSTRAPPED" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "OWNER_BOOTSTRAP_FAILED" });
+  }
+});
+
 app.get("/api/v1/health", (_req, res) => res.status(200).json({
   status: "ok", database: "foundation-ready", supabaseConfigured
 }));
