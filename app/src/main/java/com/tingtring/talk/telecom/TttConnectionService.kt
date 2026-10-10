@@ -11,6 +11,20 @@ import java.util.concurrent.ConcurrentHashMap
 
 object TttConnectionRegistry {
     private val connections = ConcurrentHashMap<String, Connection>()
+    private data class IncomingActions(val answer: () -> Unit, val reject: () -> Unit)
+    private val incomingActions = ConcurrentHashMap<String, IncomingActions>()
+
+    fun setIncomingActions(callId: String, onAnswer: () -> Unit, onReject: () -> Unit) {
+        incomingActions[callId] = IncomingActions(onAnswer, onReject)
+    }
+
+    internal fun answerIncoming(callId: String?) {
+        if (!callId.isNullOrBlank()) incomingActions.remove(callId)?.answer?.invoke()
+    }
+
+    internal fun rejectIncoming(callId: String?) {
+        if (!callId.isNullOrBlank()) incomingActions.remove(callId)?.reject?.invoke()
+    }
 
     internal fun register(callId: String?, connection: Connection) {
         if (!callId.isNullOrBlank()) connections[callId] = connection
@@ -78,9 +92,13 @@ class TttConnectionService : ConnectionService() {
             TttConnectionRegistry.register(callId, this)
         }
 
-        override fun onAnswer() = setActive()
+        override fun onAnswer() {
+            setActive()
+            TttConnectionRegistry.answerIncoming(callId)
+        }
 
         override fun onReject() {
+            TttConnectionRegistry.rejectIncoming(callId)
             TttConnectionRegistry.remove(callId, this)
             setDisconnected(DisconnectCause(DisconnectCause.REJECTED))
             destroy()
