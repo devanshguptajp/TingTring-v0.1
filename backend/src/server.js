@@ -462,12 +462,87 @@ app.post("/api/v1/calls/:callId/accept", requireSupabase, requireUser, async (re
   }
 });
 
+app.get("/api/v1/calls/:callId/participants", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { data: membership, error: membershipError } = await supabaseAdmin.from("call_participants")
+      .select("call_id,role,call:call_id(call_type,status)").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
+    if (membershipError) throw membershipError;
+    if (!membership) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    const { data, error } = await supabaseAdmin.from("call_participants")
+      .select("user_id,role,status,joined_at,left_at,user:user_id(id,ttt_user_id,username,display_name,avatar_url)")
+      .eq("call_id", req.params.callId).order("created_at", { ascending: true });
+    if (error) throw error;
+    return res.status(200).json({ participants: (data || []).map(p => ({
+      user_id: p.user_id, role: p.role, status: p.status, joined_at: p.joined_at,
+      left_at: p.left_at,
+      user: p.user ? { id: p.user.id, ttt_user_id: p.user.ttt_user_id, username: p.user.username,
+        display_name: p.user.display_name, avatar_url: p.user.avatar_url } : null
+    })) });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "CALL_PARTICIPANTS_LOOKUP_FAILED" });
+  }
+});
+
+app.post("/api/v1/calls/:callId/leave", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const { data: participant, error: lookupError } = await supabaseAdmin.from("call_participants")
+      .select("call_id,role,call:call_id(id,call_type,status,created_by)")
+      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!participant?.call) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    if (participant.call.call_type !== "GROUP") return res.status(400).json({ error: "LEAVE_ONLY_FOR_GROUP_CALLS" });
+    if (participant.role === "CALLER") return res.status(403).json({ error: "CALLER_MUST_END_GROUP_CALL" });
+    if (["ENDED", "DECLINED", "MISSED", "CANCELLED", "FAILED"].includes(participant.call.status)) {
+      return res.status(409).json({ error: "CALL_ALREADY_ENDED" });
+    }
+    const { error: leaveError } = await supabaseAdmin.from("call_participants")
+      .update({ status: "ENDED", left_at: new Date().toISOString() })
+      .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).not("status", "in", '("ENDED","DECLINED","MISSED","CANCELLED","FAILED")');
+    if (leaveError) throw leaveError;
+    const { data: remaining, error: remainingError } = await supabaseAdmin.from("call_participants")
+      .select("user_id,role,status").eq("call_id", req.params.callId);
+    if (remainingError) throw remainingError;
+    const activeInvitees = (remaining || []).filter(p => p.role !== "CALLER" && ["RINGING", "ACCEPTED"].includes(p.status));
+    if (activeInvitees.length === 0) {
+      const { error: endError } = await supabaseAdmin.from("calls")
+        .update({ status: "ENDED", ended_at: new Date().toISOString() })
+        .eq("id", req.params.callId).in("status", ["RINGING", "ACCEPTED"]);
+      if (endError) throw endError;
+      await supabaseAdmin.from("call_participants").update({ status: "ENDED", left_at: new Date().toISOString() })
+        .eq("call_id", req.params.callId).eq("role", "CALLER").in("status", ["RINGING", "ACCEPTED"]);
+    }
+    return res.status(204).send();
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "CALL_LEAVE_FAILED" });
+  }
+});
+
 app.post("/api/v1/calls/:callId/decline", requireSupabase, requireUser, async (req, res) => {
   try {
     const { data: participant, error: lookupError } = await supabaseAdmin.from("call_participants")
-      .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("role", "CALLEE").maybeSingle();
+      .select("call_id,role,call:call_id(id,call_type,status)").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).in("role", ["CALLEE", "PARTICIPANT"]).maybeSingle();
     if (lookupError) throw lookupError;
     if (!participant) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    if (participant.call?.call_type === "GROUP") {
+      if (participant.call.status === "ENDED") return res.status(409).json({ error: "CALL_ALREADY_ENDED" });
+      const { error: participantUpdateError } = await supabaseAdmin.from("call_participants").update({ status: "DECLINED", left_at: new Date().toISOString() })
+        .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("status", "RINGING");
+      if (participantUpdateError) throw participantUpdateError;
+      const { data: remaining, error: remainingError } = await supabaseAdmin.from("call_participants")
+        .select("role,status").eq("call_id", req.params.callId);
+      if (remainingError) throw remainingError;
+      const activeInvitees = (remaining || []).filter(p => p.role !== "CALLER" && ["RINGING", "ACCEPTED"].includes(p.status));
+      if (activeInvitees.length === 0) {
+        const { error: endError } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString() })
+          .eq("id", req.params.callId).in("status", ["RINGING", "ACCEPTED"]);
+        if (endError) throw endError;
+        await supabaseAdmin.from("call_participants").update({ status: "ENDED", left_at: new Date().toISOString() })
+          .eq("call_id", req.params.callId).eq("role", "CALLER").in("status", ["RINGING", "ACCEPTED"]);
+      }
+      return res.status(204).send();
+    }
     await supabaseAdmin.from("call_participants").update({ status: "DECLINED", left_at: new Date().toISOString() })
       .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).eq("status", "RINGING");
     const { error } = await supabaseAdmin.from("calls").update({ status: "DECLINED", ended_at: new Date().toISOString() })
@@ -486,6 +561,7 @@ app.post("/api/v1/calls/:callId/end", requireSupabase, requireUser, async (req, 
       .select("call_id").eq("call_id", req.params.callId).eq("user_id", req.authUser.id).maybeSingle();
     if (participantError) throw participantError;
     if (!participant) return res.status(404).json({ error: "CALL_NOT_FOUND" });
+    if (participant.call?.call_type === "GROUP" && participant.role !== "CALLER") return res.status(403).json({ error: "CALLER_ONLY_END_GROUP_CALL" });
     await supabaseAdmin.from("call_participants").update({ status: "ENDED", left_at: new Date().toISOString() })
       .eq("call_id", req.params.callId).eq("user_id", req.authUser.id).neq("status", "ENDED");
     const { error } = await supabaseAdmin.from("calls").update({ status: "ENDED", ended_at: new Date().toISOString() })
