@@ -79,9 +79,8 @@ async function sendCallPush(userIds, title, body, data) {
     if (!rows.length) return;
     const result = await messaging.sendEachForMulticast({
       tokens: rows.map(device => device.push_token),
-      notification: { title, body },
-      data: Object.fromEntries(Object.entries(data || {}).map(([key, value]) => [key, String(value ?? "")])),
-      android: { priority: "high", notification: { channelId: "ttt_incoming_calls", sound: "default", visibility: "public" } }
+      data: Object.fromEntries(Object.entries({ ...(data || {}), title, body }).map(([key, value]) => [key, String(value ?? "")])),
+      android: { priority: "high", ttl: 60000 }
     });
     const staleTokens = [];
     result.responses.forEach((response, index) => {
