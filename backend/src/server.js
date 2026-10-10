@@ -114,6 +114,9 @@ async function requireUser(req, res, next) {
   if (!result.user) return res.status(401).json({ error: result.error });
   req.authUser = result.user;
   req.authToken = result.token;
+  // Suspended accounts lose API access immediately; allow profile setup only when no profile exists yet.
+  const profile = await getProfile(supabaseAdmin, result.user.id);
+  if (profile && profile.status !== "ACTIVE") return res.status(403).json({ error: "ACCOUNT_UNAVAILABLE" });
   next();
 }
 
@@ -260,6 +263,85 @@ app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res)
     if (error.code === "USERNAME_ALREADY_IN_USE") return res.status(409).json({ error: error.code });
     console.error(error);
     res.status(500).json({ error: "PROFILE_SETUP_FAILED" });
+  }
+});
+
+app.get("/api/v1/owner/dashboard", requireSupabase, requireUser, requireOwner, async (_req, res) => {
+  try {
+    const [users, active, suspended, free, pro, premium, owners] = await Promise.all([
+      supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url,created_at,last_seen_at").neq("status", "DELETED").order("created_at", { ascending: false }).limit(50),
+      supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("status", "ACTIVE"),
+      supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("status", "SUSPENDED"),
+      supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "FREE").neq("status", "DELETED"),
+      supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "PRO").neq("status", "DELETED"),
+      supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "PREMIUM").neq("status", "DELETED"),
+      supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "OWNER").neq("status", "DELETED")
+    ]);
+    for (const result of [users, active, suspended, free, pro, premium, owners]) {
+      if (result.error) throw result.error;
+    }
+    res.status(200).json({
+      users: users.data || [],
+      counts: {
+        total: (active.count || 0) + (suspended.count || 0),
+        active: active.count || 0, suspended: suspended.count || 0,
+        free: free.count || 0, pro: pro.count || 0, premium: premium.count || 0, owners: owners.count || 0
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "OWNER_DASHBOARD_FAILED" });
+  }
+});
+
+app.patch("/api/v1/owner/users/:userId/plan", requireSupabase, requireUser, requireOwner, async (req, res) => {
+  try {
+    const plan = typeof req.body?.plan === "string" ? req.body.plan.toUpperCase() : "";
+    if (!["FREE", "PRO", "PREMIUM"].includes(plan)) return res.status(400).json({ error: "INVALID_PLAN" });
+    if (req.params.userId === req.authUser.id) return res.status(400).json({ error: "CANNOT_CHANGE_OWN_PLAN" });
+    const { data: target, error: targetError } = await supabaseAdmin.from("profiles")
+      .select("id,plan,status,username").eq("id", req.params.userId).maybeSingle();
+    if (targetError) throw targetError;
+    if (!target || target.status === "DELETED") return res.status(404).json({ error: "USER_NOT_FOUND" });
+    if (target.plan === "OWNER") return res.status(409).json({ error: "OWNER_PLAN_PROTECTED" });
+    const { data, error } = await supabaseAdmin.from("profiles").update({ plan }).eq("id", target.id)
+      .select("id,plan,status").single();
+    if (error) throw error;
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_user_id: req.authUser.id, action: "USER_PLAN_CHANGED", target_type: "PROFILE",
+      target_id: target.id, metadata: { from: target.plan, to: plan }
+    });
+    res.status(200).json({ user_id: data.id, plan: data.plan, status: data.status });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "OWNER_PLAN_UPDATE_FAILED" });
+  }
+});
+
+app.patch("/api/v1/owner/users/:userId/status", requireSupabase, requireUser, requireOwner, async (req, res) => {
+  try {
+    const status = typeof req.body?.status === "string" ? req.body.status.toUpperCase() : "";
+    if (!["ACTIVE", "SUSPENDED"].includes(status)) return res.status(400).json({ error: "INVALID_ACCOUNT_STATUS" });
+    if (req.params.userId === req.authUser.id) return res.status(400).json({ error: "CANNOT_CHANGE_OWN_STATUS" });
+    const { data: target, error: targetError } = await supabaseAdmin.from("profiles")
+      .select("id,status,plan").eq("id", req.params.userId).maybeSingle();
+    if (targetError) throw targetError;
+    if (!target || target.status === "DELETED") return res.status(404).json({ error: "USER_NOT_FOUND" });
+    if (target.plan === "OWNER") return res.status(409).json({ error: "OWNER_STATUS_PROTECTED" });
+    const { data, error } = await supabaseAdmin.from("profiles").update({ status }).eq("id", target.id)
+      .select("id,status,plan").single();
+    if (error) throw error;
+    if (status === "SUSPENDED") {
+      await supabaseAdmin.from("devices").update({ is_active: false }).eq("user_id", target.id);
+    }
+    await supabaseAdmin.from("audit_logs").insert({
+      actor_user_id: req.authUser.id, action: "USER_STATUS_CHANGED", target_type: "PROFILE",
+      target_id: target.id, metadata: { from: target.status, to: status }
+    });
+    res.status(200).json({ user_id: data.id, status: data.status, plan: data.plan });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "OWNER_STATUS_UPDATE_FAILED" });
   }
 });
 
