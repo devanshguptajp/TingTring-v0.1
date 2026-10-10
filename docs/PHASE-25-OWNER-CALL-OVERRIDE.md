@@ -12,5 +12,8 @@ If the owner leaves a group call, the backend returns to the creator's normal pl
 
 Owner status is evaluated from Supabase profiles and participant rows. The owner override does not create permanent Pro/Premium subscriptions or edit another user's plan.
 
-## Verification
+## Automated regression coverage
+The backend smoke suite verifies that the designated owner has unlimited duration, that a designated owner as an active participant overrides Free/Pro call limits, that unrelated OWNER accounts do not trigger the designated-owner override, and that group participant caps follow the owner override.
+
+## Manual integration verification
 Use a designated Owner test account plus Free, Pro, and Premium accounts. Test owner as caller, callee, and group participant; then have the owner leave a group and confirm the creator's original limit resumes. Confirm non-owner calls and stored plan values are unchanged.
