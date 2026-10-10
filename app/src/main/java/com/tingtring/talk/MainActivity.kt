@@ -101,7 +101,7 @@ class MainActivity:ComponentActivity(){
  
  if(checking)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
  else if(!termsAccepted)TermsDialog{api.setTermsAccepted(true);termsAccepted=true}
- else if(user==null)AuthScreen(api){user=it}else if(activeCall!=null)CallScreen(api,activeCall!!){activeCall=null}else MainShell(api,user!!,{activeCall=it}){user=null;session.clear()}
+ else if(user==null)AuthScreen(api){user=it}else if(activeCall!=null)CallScreen(api,activeCall!!){activeCall=null}else MainShell(api,user!!,{activeCall=it},{user=it}){user=null;session.clear()}
 }
 
 @Composable private fun TermsDialog(onAccept:()->Unit){
@@ -205,7 +205,7 @@ class MainActivity:ComponentActivity(){
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onLogout:()->Unit){
+@Composable private fun MainShell(api:ApiClient,user:TttUser,onStartCall:(CallSession)->Unit,onUserUpdated:(TttUser)->Unit,onLogout:()->Unit){
  var selected by rememberSaveable{mutableIntStateOf(0)}
  var incoming by remember{mutableStateOf<IncomingCall?>(null)}
  var requestedCallIds by remember{mutableStateOf(setOf<String>())}
@@ -262,8 +262,8 @@ class MainActivity:ComponentActivity(){
   }}){p->when(selected){
    0->Home(user,Modifier.padding(p))
    1->Contacts(api,onStartCall,true,Modifier.padding(p))
-   2->Profile(api,user,onLogout,Modifier.padding(p))
-   3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onLogout,Modifier.padding(p))
+   2->Profile(api,user,onUserUpdated,onLogout,Modifier.padding(p))
+   3->if(user.plan=="OWNER") OwnerConsole(api,Modifier.padding(p)) else Profile(api,user,onUserUpdated,onLogout,Modifier.padding(p))
   }}
   incoming?.let { call ->
    AlertDialog(
@@ -350,7 +350,7 @@ class MainActivity:ComponentActivity(){
 }
 @Composable private fun UserRow(user:TttUser,action:String,callAction:String,onAction:()->Unit,onCall:()->Unit,onVideoCall:()->Unit = {})=Card(Modifier.fillMaxWidth()){Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(user.displayName,fontWeight=FontWeight.SemiBold);Text("@"+user.username+" • "+user.tttUserId,style=MaterialTheme.typography.bodySmall)};TextButton(onClick=onCall){Text(callAction)};TextButton(onClick=onVideoCall){Text("Video")};TextButton(onClick=onAction){Text(action)}}}
 
-@Composable private fun Profile(api:ApiClient,user:TttUser,onLogout:()->Unit,modifier:Modifier=Modifier){
+@Composable private fun Profile(api:ApiClient,user:TttUser,onUserUpdated:(TttUser)->Unit,onLogout:()->Unit,modifier:Modifier=Modifier){
  val scope=rememberCoroutineScope()
  var username by rememberSaveable{mutableStateOf(user.username)}
  var displayName by rememberSaveable{mutableStateOf(user.displayName)}
@@ -384,6 +384,28 @@ class MainActivity:ComponentActivity(){
    shape=RoundedCornerShape(17.dp)
   ){if(saving)CircularProgressIndicator(Modifier.size(20.dp),color=MaterialTheme.colorScheme.onPrimary)else Text("Save changes",fontWeight=FontWeight.SemiBold)}
   Text("Plan: "+user.plan,style=MaterialTheme.typography.bodyLarge)
+  if(user.plan!="OWNER"){
+   OutlinedButton(
+    onClick={
+     saving=true;message=null;error=null
+     scope.launch{
+      val r=api.bootstrapOwner()
+      if(r.value!=null){onUserUpdated(r.value);message="Owner Console activated for this account."}
+      else error=when(r.error){
+       "OWNER_BOOTSTRAP_NOT_CONFIGURED"->"Owner setup is not configured on the server yet."
+       "OWNER_BOOTSTRAP_EMAIL_MISMATCH"->"This account is not the configured initial owner account."
+       "OWNER_EMAIL_NOT_VERIFIED"->"Verify this account's email first."
+       "OWNER_ALREADY_INITIALIZED"->"An owner already exists. Ask an existing owner to grant access."
+       else->r.error
+      }
+      saving=false
+     }
+    },
+    enabled=!saving,
+    modifier=Modifier.fillMaxWidth()
+   ){Text(if(saving)"Checking owner setup…" else "Activate Owner Console")}
+   Text("Available only to the verified email configured for first-owner setup, before the first owner is created.",style=MaterialTheme.typography.bodySmall)
+  }
   OutlinedButton(onClick={scope.launch{api.logout();onLogout()}},modifier=Modifier.fillMaxWidth()){Text("Sign out")}
  }
 }
