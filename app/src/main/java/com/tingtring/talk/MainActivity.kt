@@ -269,7 +269,7 @@ class MainActivity:ComponentActivity(){
    AlertDialog(
     onDismissRequest={},
     title={Text("Incoming TingTring call")},
-    text={Text(call.callerName + if(call.callType=="VIDEO") " is calling by video." else " is calling you.")},
+    text={Text(call.callerName + when(call.callType){"VIDEO"->" is calling by video.";"GROUP"->" is inviting you to a group call.";else->" is calling you."})},
     confirmButton={TextButton(onClick={
      scope.launch{
       val r=api.acceptCall(call.callId)
