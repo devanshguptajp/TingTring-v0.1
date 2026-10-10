@@ -389,10 +389,18 @@ app.post("/api/v1/profile/setup", requireSupabase, requireUser, async (req, res)
   }
 });
 
-app.get("/api/v1/owner/dashboard", requireSupabase, requireUser, requireOwner, async (_req, res) => {
+app.get("/api/v1/owner/dashboard", requireSupabase, requireUser, requireOwner, async (req, res) => {
   try {
+    const requestedPage = Number.parseInt(String(req.query.page || "1"), 10);
+    const requestedPageSize = Number.parseInt(String(req.query.page_size || "50"), 10);
+    const page = Number.isInteger(requestedPage) && requestedPage >= 1 ? Math.min(requestedPage, 100000) : 1;
+    const pageSize = [25, 50, 100].includes(requestedPageSize) ? requestedPageSize : 50;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
     const [users, active, suspended, free, pro, premium, owners] = await Promise.all([
-      supabaseAdmin.from("profiles").select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url,created_at,last_seen_at").neq("status", "DELETED").order("created_at", { ascending: false }).limit(1000),
+      supabaseAdmin.from("profiles")
+        .select("id,ttt_user_id,username,display_name,email,status,plan,avatar_url,created_at,last_seen_at", { count: "exact" })
+        .neq("status", "DELETED").order("created_at", { ascending: false }).range(from, to),
       supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("status", "ACTIVE"),
       supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("status", "SUSPENDED"),
       supabaseAdmin.from("profiles").select("id", { count: "exact", head: true }).eq("plan", "FREE").neq("status", "DELETED"),
@@ -403,10 +411,15 @@ app.get("/api/v1/owner/dashboard", requireSupabase, requireUser, requireOwner, a
     for (const result of [users, active, suspended, free, pro, premium, owners]) {
       if (result.error) throw result.error;
     }
+    const totalRecords = users.count || 0;
     res.status(200).json({
       users: users.data || [],
+      page,
+      page_size: pageSize,
+      total_records: totalRecords,
+      has_more: from + (users.data || []).length < totalRecords,
       counts: {
-        total: (active.count || 0) + (suspended.count || 0),
+        total: totalRecords,
         active: active.count || 0, suspended: suspended.count || 0,
         free: free.count || 0, pro: pro.count || 0, premium: premium.count || 0, owners: owners.count || 0
       }
