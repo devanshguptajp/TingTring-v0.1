@@ -308,6 +308,29 @@ app.post("/api/v1/owner/users/:userId/ttt-id", requireSupabase, requireUser, req
   }
 });
 
+app.post("/api/v1/devices/push-token", requireSupabase, requireUser, async (req, res) => {
+  try {
+    const token = typeof req.body?.push_token === "string" ? req.body.push_token.trim() : "";
+    const installationId = typeof req.body?.installation_id === "string" ? req.body.installation_id.trim() : "";
+    if (token.length < 20 || token.length > 4096 || !/^[a-zA-Z0-9._:-]{8,128}$/.test(installationId)) {
+      return res.status(400).json({ error: "INVALID_DEVICE_TOKEN" });
+    }
+    const { data, error } = await supabaseAdmin.from("devices").upsert({
+      user_id: req.authUser.id,
+      installation_id: installationId,
+      platform: "ANDROID",
+      push_token: token,
+      is_active: true,
+      last_seen_at: new Date().toISOString()
+    }, { onConflict: "user_id,installation_id" }).select("id").single();
+    if (error) throw error;
+    return res.status(200).json({ status: "DEVICE_REGISTERED", device_id: data.id });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "DEVICE_REGISTER_FAILED" });
+  }
+});
+
 app.post("/api/v1/calls/start", requireSupabase, requireUser, async (req, res) => {
   try {
     const livekitUrl = process.env.LIVEKIT_URL;
