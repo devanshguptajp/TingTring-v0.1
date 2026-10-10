@@ -6,6 +6,7 @@ import android.telecom.ConnectionRequest
 import android.telecom.ConnectionService
 import android.telecom.DisconnectCause
 import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
 
 class TttConnectionService : ConnectionService() {
     override fun onCreateIncomingConnection(
@@ -39,11 +40,11 @@ class TttConnectionService : ConnectionService() {
     private fun createConnection(request: ConnectionRequest): Connection {
         val connection = TttConnection()
         val address = request.address ?: Uri.parse("ttt:unknown")
-        connection.setAddress(address, Connection.PRESENTATION_ALLOWED)
+        connection.setAddress(address, TelecomManager.PRESENTATION_ALLOWED)
         val displayName = request.extras?.getString("display_name")
             ?.takeIf { it.isNotBlank() }
             ?: "TingTring"
-        connection.setCallerDisplayName(displayName, Connection.PRESENTATION_ALLOWED)
+        connection.setCallerDisplayName(displayName, TelecomManager.PRESENTATION_ALLOWED)
         return connection
     }
 
