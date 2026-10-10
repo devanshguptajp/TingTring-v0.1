@@ -1,15 +1,22 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
-import { validateEmail, normalizeEmail, validateUsername, validateDisplayName, publicProfile, authResponse } from "../src/auth.js";
+import { validateEmail, normalizeEmail, validateUsername, validateDisplayName, publicProfile, authResponse, getAuthenticatedUser } from "../src/auth.js";
 
 assert.equal(validateEmail("User@Example.com"), true);
 assert.equal(normalizeEmail("  User@Example.COM "), "user@example.com");
 assert.equal(validateEmail("not-an-email"), false);
 assert.equal(validateUsername("devansh_123"), true);
 assert.equal(validateUsername("Bad Name"), false);
+assert.equal(validateUsername("ab"), false);
+assert.equal(validateUsername("UpperCase"), false);
+assert.equal(validateUsername("a".repeat(31)), false);
 assert.equal(validateDisplayName("TingTring User"), true);
-assert.equal(validateDisplayName(" ".repeat(81)), false);
+assert.equal(validateDisplayName(" "), false);
+assert.equal(validateDisplayName("a".repeat(80)), true);
+assert.equal(validateDisplayName("a".repeat(81)), false);
+assert.deepEqual(await getAuthenticatedUser({}, undefined), { user: null, error: "MISSING_AUTHORIZATION" });
+assert.deepEqual(await getAuthenticatedUser({}, "Basic abc"), { user: null, error: "MISSING_AUTHORIZATION" });
 
 const profile = {
   id: "00000000-0000-0000-0000-000000000001",
@@ -59,6 +66,11 @@ try {
   assert.equal((await api.json()).name, "TingTring Talk API");
   const missing = await fetch("http://127.0.0.1:3189/does-not-exist");
   assert.equal(missing.status, 404);
+  const ownerCountWithoutSupabase = await fetch("http://127.0.0.1:3189/api/v1/owner/count", { headers: { Authorization: "Bearer fake" } });
+  assert.equal(ownerCountWithoutSupabase.status, 503);
+  assert.equal((await ownerCountWithoutSupabase.json()).error, "SUPABASE_NOT_CONFIGURED");
+  const oversizedJson = await fetch("http://127.0.0.1:3189/api/v1/auth/otp/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "x".repeat(40000) }) });
+  assert.equal(oversizedJson.status, 413);
 } finally {
   child.kill("SIGTERM");
   await sleep(100);
