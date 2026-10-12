@@ -13,7 +13,8 @@ export function planEntitlement(plan) {
 }
 
 export function isOverrideOwner(profile) {
-  return profile?.plan === "OWNER" &&
+  return typeof profile?.plan === "string" &&
+    profile.plan.toUpperCase() === "OWNER" &&
     typeof profile.username === "string" &&
     profile.username.toLowerCase() === OWNER_OVERRIDE_USERNAME;
 }
