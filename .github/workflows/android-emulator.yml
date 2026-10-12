@@ -21,7 +21,7 @@ concurrency:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,37 +53,42 @@ jobs:
       - name: Launch Android emulator and verify app
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_2
           force-avd-creation: true
-          disable-animations: true
-          emulator-options: "-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim"
+          emulator-boot-timeout: 900
+          disable-animations: false
+          emulator-options: "-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -no-snapshot-save"
           script: |
+            set -euo pipefail
             adb wait-for-device
-            for i in $(seq 1 60); do
+            for i in $(seq 1 120); do
               if [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ]; then
                 break
               fi
               sleep 2
             done
             test "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1"
+            adb shell settings put global window_animation_scale 0 || true
+            adb shell settings put global transition_animation_scale 0 || true
+            adb shell settings put global animator_duration_scale 0 || true
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell am force-stop com.tingtring.talk
             adb shell cmd package resolve-activity --brief com.tingtring.talk | grep -q 'com.tingtring.talk/.MainActivity'
-            adb shell am force-stop com.tingtring.talk
             adb shell am start -W -n com.tingtring.talk/.MainActivity
             sleep 5
             adb shell pidof com.tingtring.talk
             adb shell dumpsys activity activities | grep -q 'com.tingtring.talk/.MainActivity'
-            if adb logcat -d -t 400 | grep -E 'FATAL EXCEPTION|Process: com.tingtring.talk' | grep -q .; then
+            if adb logcat -d -t 800 | grep -E 'FATAL EXCEPTION|Process: com.tingtring.talk' | grep -q .; then
               echo "Application crash detected in logcat"
-              adb logcat -d -t 400
+              adb logcat -d -t 800
               exit 1
             fi
 
       - name: Upload debug APK
+        if: always() && hashFiles('app/build/outputs/apk/debug/app-debug.apk') != ''
         uses: actions/upload-artifact@v4
         with:
           name: tingtring-debug-apk
