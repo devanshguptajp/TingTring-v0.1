@@ -21,6 +21,7 @@ assert.equal(callEntitlement(freeCaller, [designatedOwner]).ownerOverride, true)
 assert.equal(callEntitlement(freeCaller, [designatedOwner]).maxDurationSeconds, null);
 assert.equal(callEntitlement(freeCaller, [designatedOwner]).effectivePlan, "OWNER");
 assert.equal(callEntitlement(freeCaller, [designatedOwner]).maxParticipants, 25);
+assert.equal(callEntitlement(freeCaller, [{ plan: "owner", username: "DEV17112012" }]).ownerOverride, true);
 assert.equal(callEntitlement(designatedOwner, [designatedOwner]).ownerOverride, true);
 assert.equal(callEntitlement(designatedOwner, [designatedOwner]).maxDurationSeconds, null);
 assert.equal(callEntitlement({ plan: "FREE", username: "someone_else" }, [{ plan: "OWNER", username: "another_owner" }]).ownerOverride, false);
